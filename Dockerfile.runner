@@ -1,0 +1,137 @@
+# Extend the official runner at the exact digest you chose
+FROM ghcr.io/actions/actions-runner@sha256:75599cd393958a52142f489a160123f5b9b21605a40609696deb13d49867d53f
+
+USER root
+SHELL ["/bin/bash", "-lc"]
+
+# =============================================================================
+# Base tools + Java 8 & 21 (both needed for Android SDK tooling)
+# =============================================================================
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    curl wget git unzip xz-utils jq ca-certificates gnupg build-essential \
+    python3 python3-pip sudo \
+    openjdk-8-jdk openjdk-21-jdk \
+    lcov \
+  && rm -rf /var/lib/apt/lists/*
+
+# Java environment variables for workflow compatibility
+# Workflows can switch between Java versions using these env vars
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+ENV JAVA_HOME_8_X64=/usr/lib/jvm/java-8-openjdk-amd64
+ENV JAVA_HOME_17_X64=/usr/lib/jvm/java-21-openjdk-amd64
+ENV JAVA_HOME_21_X64=/usr/lib/jvm/java-21-openjdk-amd64
+
+# =============================================================================
+# Docker CLI + buildx + compose (no daemon - uses host's Docker socket)
+# =============================================================================
+RUN install -m 0755 -d /etc/apt/keyrings \
+  && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+  && chmod a+r /etc/apt/keyrings/docker.gpg \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list \
+  && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      docker-ce-cli docker-buildx-plugin docker-compose-plugin \
+  && rm -rf /var/lib/apt/lists/*
+
+# Allow the runner user to call docker if you run as non-root
+RUN groupadd -f docker && usermod -aG docker runner || true
+
+# =============================================================================
+# KVM support (for hardware-accelerated Android emulator)
+# =============================================================================
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils \
+    libc6-dev libstdc++6 lib32z1 lib32stdc++6 \
+  && rm -rf /var/lib/apt/lists/* \
+  && groupadd -f kvm && usermod -aG kvm runner || true \
+  && chmod 666 /dev/kvm || true
+
+# Note: /dev/kvm must be mounted from host at runtime for KVM to work
+# Add to docker-compose.yml: devices: - /dev/kvm:/dev/kvm
+
+# =============================================================================
+# Node.js 22 + pnpm + firebase-tools
+# =============================================================================
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+  && apt-get update && apt-get install -y nodejs \
+  && npm i -g pnpm@9 firebase-tools \
+  && rm -rf /var/lib/apt/lists/*
+
+# =============================================================================
+# Google Chrome (stable) + ChromeDriver (auto-matched version)
+# =============================================================================
+RUN wget -qO- https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
+  && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+  && apt-get update && apt-get install -y google-chrome-stable \
+  && CHROMEDRIVER_URL="$(curl -fsSL https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json \
+       | jq -r '.channels.Stable.downloads.chromedriver[] | select(.platform=="linux64") | .url')" \
+  && curl -fsSL "$CHROMEDRIVER_URL" -o /tmp/chromedriver.zip \
+  && unzip -o /tmp/chromedriver.zip -d /opt \
+  && mv /opt/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver \
+  && chmod +x /usr/local/bin/chromedriver \
+  && rm -rf /tmp/chromedriver.zip /opt/chromedriver-linux64 /var/lib/apt/lists/*
+
+# =============================================================================
+# Android SDK (command-line tools, platform-tools, build-tools, emulator)
+# =============================================================================
+ENV ANDROID_HOME=/opt/android-sdk
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH
+
+RUN mkdir -p $ANDROID_HOME/cmdline-tools \
+  && curl -fsSL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/cmdline-tools.zip \
+  && unzip -q /tmp/cmdline-tools.zip -d $ANDROID_HOME/cmdline-tools \
+  && mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest \
+  && rm /tmp/cmdline-tools.zip \
+  # Accept all licenses
+  && yes | sdkmanager --licenses \
+  # Install SDK components (system images downloaded at runtime - they're huge)
+  && sdkmanager \
+      "platform-tools" \
+      "platforms;android-33" \
+      "platforms;android-34" \
+      "build-tools;34.0.0" \
+      "emulator" \
+  && rm -rf /tmp/*
+
+# =============================================================================
+# Flutter SDK (pinned to match local dev environment)
+# Update this version when you update Flutter locally
+# =============================================================================
+ENV FLUTTER_HOME=/opt/flutter
+ENV FLUTTER_VERSION=3.35.7
+ENV PATH=$FLUTTER_HOME/bin:$FLUTTER_HOME/bin/cache/dart-sdk/bin:$PATH
+
+RUN git clone --depth 1 -b $FLUTTER_VERSION https://github.com/flutter/flutter.git $FLUTTER_HOME \
+  && git config --global --add safe.directory $FLUTTER_HOME \
+  && flutter --version \
+  && flutter precache --linux --web --android \
+  # Accept Android licenses for Flutter
+  && flutter doctor --android-licenses || true \
+  && flutter doctor
+
+# =============================================================================
+# Supabase CLI (for local Supabase development/testing)
+# =============================================================================
+RUN curl -fsSL https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz \
+  | tar -xz -C /usr/local/bin supabase \
+  && supabase --version
+
+# =============================================================================
+# Final setup
+# =============================================================================
+RUN usermod -aG sudo runner || true
+
+# Keep runner working dir consistent with your compose mounts
+WORKDIR /home/runner/actions-runner
+
+# (We do NOT override ENTRYPOINT/CMD; register-and-run.sh handles config/run)
+
+# =============================================================================
+# Version labels for tracking
+# =============================================================================
+ARG BUILD_DATE
+ARG FLUTTER_VER
+LABEL org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.title="actions-runner-flutter" \
+      org.opencontainers.image.description="Self-hosted GitHub Actions runner with Flutter, Android SDK, and CI tools" \
+      flutter.version="${FLUTTER_VER:-3.35.7}"

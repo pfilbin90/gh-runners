@@ -1,0 +1,60 @@
+version: "3.8"
+
+x-runner-env: &runner-env
+  GH_OWNER: ${GH_OWNER}
+  GH_REPO: ${GH_REPO}
+  GH_PAT: ${GH_PAT}
+  RUNNER_GROUP: ${RUNNER_GROUP}
+  RUNNER_LABELS: ${RUNNER_LABELS}
+
+x-runner-vols: &runner-vols
+  - //var/run/docker.sock:/var/run/docker.sock
+  - ./register-and-run.sh:/home/runner/register-and-run.sh:ro
+  - runner-cache:/_work
+  - pub-cache:/home/runner/.pub-cache
+  - npm-cache:/home/runner/.npm
+  - pnpm-store:/home/runner/.local/share/pnpm
+  - flutter-cache:/home/runner/.cache/flutter
+
+x-runner-svc: &runner-svc
+  # Use pre-built image from GitHub Container Registry
+  # To build locally instead, comment out 'image' and uncomment 'build'
+  image: ghcr.io/${GH_OWNER}/actions-runner-flutter:latest
+  # build:
+  #   context: .
+  #   dockerfile: Dockerfile.runner
+  environment: *runner-env
+  volumes: *runner-vols
+  devices:
+    - /dev/kvm:/dev/kvm
+  entrypoint: ["/bin/bash","-lc","/home/runner/register-and-run.sh"]
+  restart: always
+
+services:
+  runner-1:
+    <<: *runner-svc
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-1
+  runner-2:
+    <<: *runner-svc
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-2
+  runner-3:
+    <<: *runner-svc
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-3
+  runner-4:
+    <<: *runner-svc
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-4
+
+volumes:
+  runner-cache:
+  pub-cache:
+  npm-cache:
+  pnpm-store:
+  flutter-cache:
