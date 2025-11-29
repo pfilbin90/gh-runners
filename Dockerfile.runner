@@ -84,14 +84,26 @@ RUN mkdir -p $ANDROID_HOME/cmdline-tools \
   && rm /tmp/cmdline-tools.zip \
   # Accept all licenses
   && yes | sdkmanager --licenses \
-  # Install SDK components (system images downloaded at runtime - they're huge)
+  # Install SDK components including system image for integration tests
   && sdkmanager \
       "platform-tools" \
       "platforms;android-33" \
       "platforms;android-34" \
       "build-tools;34.0.0" \
       "emulator" \
+      "system-images;android-33;google_apis;x86_64" \
   && rm -rf /tmp/*
+
+# Pre-create the AVD so integration tests don't have to
+# New Android SDK cmdline-tools require Java 17+ (class file version 61.0)
+RUN export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
+  && export PATH="$JAVA_HOME/bin:$PATH" \
+  && echo "no" | avdmanager create avd \
+      --name "test_avd" \
+      --package "system-images;android-33;google_apis;x86_64" \
+      --device "pixel_4" \
+      --force \
+  && echo "AVD created successfully"
 
 # =============================================================================
 # Flutter SDK (pinned to match local dev environment)

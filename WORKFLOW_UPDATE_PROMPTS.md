@@ -12,38 +12,75 @@ The new runner image has all dependencies baked in, so you can remove the setup 
 
 **Prompt:**
 ```
-Please edit .github/workflows/integration-tests.yml to simplify the workflow since we now have a custom runner image with all dependencies baked in.
+Please edit .github/workflows/integration-tests.yml to dramatically simplify the workflow since we now have a custom runner image with all dependencies baked in, including the Android system image and pre-created AVD.
 
-Remove these setup steps that are no longer needed:
-- "Set up Java 8 (AVD tooling)" - Java 8 is pre-installed at $JAVA_HOME_8_X64
-- "Set up Java 17" - Java 21 is pre-installed at $JAVA_HOME (compatible with 17)
-- "Set up Android SDK" - Android SDK is pre-installed at $ANDROID_HOME
-- "Accept Android licenses" - Already accepted in the image
-- "Set up Flutter" - Flutter 3.35.7 is pre-installed
-- "Trust Flutter SDK dir" - Already configured in the image
-- "Set up Node.js" - Node.js 22 is pre-installed
-- "Ensure Docker + Compose available" - Docker Compose is pre-installed
+REMOVE these setup steps entirely (they're all pre-installed):
+- "Set up Java 8 (AVD tooling)"
+- "Set up Java 17"
+- "Set up Android SDK"
+- "Accept Android licenses"
+- "Set up Flutter"
+- "Trust Flutter SDK dir"
+- "Set up Node.js"
+- "Ensure Docker + Compose available"
+- "Create Android Virtual Device (AVD)" - The AVD named "test_avd" is pre-created in the image!
 
-Keep these steps but simplify:
-- "Get Flutter dependencies" - Keep as-is (flutter pub get)
-- "Run build_runner" - Keep as-is
-- "Set up Supabase for integration tests" - Simplify to use `docker compose` directly
-- "Create Android Virtual Device" - Simplify since Java switching is no longer needed
-- All the test execution and cleanup steps - Keep as-is
+SIMPLIFY "Set up Supabase for integration tests" to just:
+```yaml
+- name: Start Supabase
+  run: |
+    docker compose -f docker-compose.test.yml up -d
+    echo "Waiting for Postgres..."
+    for i in {1..60}; do
+      if docker compose -f docker-compose.test.yml exec -T postgres pg_isready -U postgres > /dev/null 2>&1; then
+        echo "Postgres is ready"
+        break
+      fi
+      sleep 1
+    done
+```
 
-Add a verification step at the beginning:
+SIMPLIFY "Start Android emulator" - the AVD already exists as "test_avd":
+```yaml
+- name: Start Android emulator
+  run: |
+    echo "Starting pre-configured AVD..."
+    emulator -avd test_avd -no-audio -no-window -no-snapshot-load -gpu swiftshader_indirect &
+
+    echo "Waiting for emulator to boot..."
+    adb wait-for-device
+    for i in {1..180}; do
+      if adb shell getprop sys.boot_completed 2>/dev/null | grep -q "1"; then
+        echo "Emulator is ready"
+        break
+      fi
+      sleep 1
+    done
+    adb devices
+```
+
+ADD a verification step after checkout:
 ```yaml
 - name: Verify runner environment
   run: |
-    echo "Flutter: $(flutter --version | head -1)"
-    echo "Dart: $(dart --version)"
-    echo "Java: $(java -version 2>&1 | head -1)"
+    echo "=== Runner Environment ==="
+    flutter --version | head -1
+    java -version 2>&1 | head -1
     echo "Android SDK: $ANDROID_SDK_ROOT"
     echo "Node: $(node --version)"
-    echo "Docker Compose: $(docker compose version)"
+    docker compose version
+    avdmanager list avd | grep -A2 "test_avd" || echo "AVD check skipped"
 ```
 
-The JAVA_HOME_8_X64 and JAVA_HOME_17_X64 environment variables are already set in the runner image for the AVD creation step.
+KEEP these steps as-is:
+- Checkout
+- Get Flutter dependencies (flutter pub get)
+- Run build_runner
+- Determine test device
+- Run integration tests
+- Stop Android emulator
+- Stop Supabase
+- All the artifact upload and notification steps
 ```
 
 ---
@@ -179,9 +216,11 @@ Keep the Cache Pub step and all other steps.
 |------|---------|--------------|
 | Flutter | 3.35.7 | `$FLUTTER_HOME` (/opt/flutter) |
 | Dart | 3.9.2 | Included with Flutter |
-| Java 8 | OpenJDK | `$JAVA_HOME_8_X64` |
 | Java 21 | OpenJDK | `$JAVA_HOME` / `$JAVA_HOME_21_X64` |
+| Java 8 | OpenJDK | `$JAVA_HOME_8_X64` (legacy, rarely needed) |
 | Android SDK | 33, 34 | `$ANDROID_HOME` / `$ANDROID_SDK_ROOT` |
+| Android System Image | android-33;google_apis;x86_64 | Pre-downloaded (~1.5GB) |
+| Android AVD | "test_avd" (Pixel 4) | Pre-created, ready to boot |
 | Node.js | 22.x | Pre-installed |
 | pnpm | 9.x | Pre-installed |
 | Chrome | Latest stable | Pre-installed |
