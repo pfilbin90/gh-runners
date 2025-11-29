@@ -61,8 +61,18 @@ Copy `.env.example` to `.env` and set:
 - `/dev/kvm` is mounted for hardware-accelerated Android emulator
 - Volumes persist package caches across container restarts
 
+## Synology NAS Deployment
+
+For running these runners on a Synology NAS, see **[SYNOLOGY.md](SYNOLOGY.md)** for complete setup and update instructions.
+
+Key differences from standard deployment:
+- Uses shared folders (`/volume1/gh-runner`, `/volume1/gh-runner2`) instead of Docker volumes
+- Requires manual script upload and permission setup
+- Uses `update-synology-runners.sh` instead of PowerShell update script
+- KVM hardware acceleration not available (software emulation only)
+
 ## Updating Flutter Version
 
 1. Edit `FLUTTER_VERSION` in `Dockerfile.runner`
 2. Push to trigger rebuild workflow, or run `.\build-and-push.ps1`
-3. Run `.\update-runners.ps1` on host machine
+3. Run `.\update-runners.ps1` on host machine (or `update-synology-runners.sh` on Synology)
