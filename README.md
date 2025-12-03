@@ -254,8 +254,8 @@ sudo chown -R 1001:1001 /volume1/gh-runner
 
 ### Image won't push to GHCR
 ```powershell
-# Login first
-echo YOUR_PAT | docker login ghcr.io -u <your-github-username> --password-stdin
+# Login first (will prompt for password - use your PAT)
+docker login ghcr.io -u <your-github-username>
 ```
 Ensure PAT has `write:packages` scope.
 

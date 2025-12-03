@@ -32,7 +32,7 @@ jobs:
           # If that didn't work, try getting the tag list
           if [ -z "$LATEST_DIGEST" ]; then
             LATEST_TAG=$(curl -fsSL -H "Authorization: Bearer $TOKEN" \
-              "https://ghcr.io/v2/actions/actions-runner/tags/list" | jq -r '.tags | map(select(test("^[0-9]"))) | sort_by(. | split(".") | map(tonumber)) | last')
+              "https://ghcr.io/v2/actions/actions-runner/tags/list" | jq -r '.tags | map(select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))) | sort_by(. | split(".") | map(tonumber)) | last')
             echo "Latest actions-runner tag: $LATEST_TAG"
             echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
           else
