@@ -1,5 +1,5 @@
-# Extend the official runner at the exact digest you chose
-FROM ghcr.io/actions/actions-runner@sha256:75599cd393958a52142f489a160123f5b9b21605a40609696deb13d49867d53f
+# Extend the official runner (latest version)
+FROM ghcr.io/actions/actions-runner:latest
 
 USER root
 SHELL ["/bin/bash", "-lc"]
@@ -106,14 +106,16 @@ RUN export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
   && echo "AVD created successfully"
 
 # =============================================================================
-# Flutter SDK (pinned to match local dev environment)
-# Update this version when you update Flutter locally
+# Flutter SDK (automatically fetches latest stable version)
+# Rebuilding the image will pick up the newest stable Flutter release
 # =============================================================================
 ENV FLUTTER_HOME=/opt/flutter
-ENV FLUTTER_VERSION=3.35.7
 ENV PATH=$FLUTTER_HOME/bin:$FLUTTER_HOME/bin/cache/dart-sdk/bin:$PATH
 
-RUN git clone --depth 1 -b $FLUTTER_VERSION https://github.com/flutter/flutter.git $FLUTTER_HOME \
+RUN FLUTTER_VERSION=$(curl -fsSL https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json \
+      | jq -r '[.releases[] | select(.channel == "stable")][0].version') \
+  && echo "Installing Flutter $FLUTTER_VERSION" \
+  && git clone --depth 1 -b $FLUTTER_VERSION https://github.com/flutter/flutter.git $FLUTTER_HOME \
   && git config --global --add safe.directory $FLUTTER_HOME \
   && flutter --version \
   && flutter precache --linux --web --android \
@@ -142,8 +144,7 @@ WORKDIR /home/runner/actions-runner
 # Version labels for tracking
 # =============================================================================
 ARG BUILD_DATE
-ARG FLUTTER_VER
 LABEL org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.title="actions-runner-flutter" \
       org.opencontainers.image.description="Self-hosted GitHub Actions runner with Flutter, Android SDK, and CI tools" \
-      flutter.version="${FLUTTER_VER:-3.35.7}"
+      flutter.version="latest-stable"

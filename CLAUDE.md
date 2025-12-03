@@ -47,7 +47,7 @@ Copy `.env.example` to `.env` and set:
 
 | Tool | Version | Notes |
 |------|---------|-------|
-| Flutter | 3.35.7 | `$FLUTTER_HOME=/opt/flutter` |
+| Flutter | Latest stable | Auto-fetched at build time; `$FLUTTER_HOME=/opt/flutter` |
 | Android SDK | 33, 34 | Pre-created AVD named "test_avd" (Pixel 4, API 33) |
 | Java | 8, 21 | Both versions available; 21 is default |
 | Node.js | 22.x | With pnpm 9.x |
@@ -73,6 +73,9 @@ Key differences from standard deployment:
 
 ## Updating Flutter Version
 
-1. Edit `FLUTTER_VERSION` in `Dockerfile.runner`
-2. Push to trigger rebuild workflow, or run `.\build-and-push.ps1`
-3. Run `.\update-runners.ps1` on host machine (or `update-synology-runners.sh` on Synology)
+Flutter version is automatically fetched from Flutter's releases API at build time (latest stable).
+
+To pick up a new Flutter release:
+1. Rebuild the image: `.\build-and-push.ps1`
+2. Update desktop runners: `.\update-runners.ps1`
+3. Update Synology runners: `bash update-synology-runners.sh`
