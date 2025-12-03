@@ -1,0 +1,128 @@
+name: Check for Updates
+
+on:
+  schedule:
+    # Run daily at 9 AM UTC
+    - cron: '0 9 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Flutter version
+        id: flutter
+        run: |
+          # Get latest stable Flutter version
+          LATEST_FLUTTER=$(curl -fsSL https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json \
+            | jq -r '[.releases[] | select(.channel == "stable")][0].version')
+          echo "version=$LATEST_FLUTTER" >> $GITHUB_OUTPUT
+          echo "Latest Flutter stable: $LATEST_FLUTTER"
+
+      - name: Check actions-runner image
+        id: runner
+        run: |
+          # Get latest actions-runner image digest
+          TOKEN=$(curl -fsSL "https://ghcr.io/token?scope=repository:actions/actions-runner:pull" | jq -r '.token')
+          LATEST_DIGEST=$(curl -fsSL -H "Authorization: Bearer $TOKEN" \
+            "https://ghcr.io/v2/actions/actions-runner/manifests/latest" \
+            -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+            2>/dev/null | jq -r '.config.digest // empty' || echo "")
+          
+          # If that didn't work, try getting the tag list
+          if [ -z "$LATEST_DIGEST" ]; then
+            LATEST_TAG=$(curl -fsSL -H "Authorization: Bearer $TOKEN" \
+              "https://ghcr.io/v2/actions/actions-runner/tags/list" | jq -r '.tags | map(select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))) | sort_by(. | split(".") | map(tonumber)) | last')
+            echo "Latest actions-runner tag: $LATEST_TAG"
+            echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          else
+            echo "digest=$LATEST_DIGEST" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get stored versions
+        id: stored
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Try to get stored versions from repository variable or a cache
+          STORED_FLUTTER="${{ vars.LAST_FLUTTER_VERSION || '' }}"
+          STORED_RUNNER="${{ vars.LAST_RUNNER_VERSION || '' }}"
+          echo "stored_flutter=$STORED_FLUTTER" >> $GITHUB_OUTPUT
+          echo "stored_runner=$STORED_RUNNER" >> $GITHUB_OUTPUT
+          echo "Stored Flutter: $STORED_FLUTTER"
+          echo "Stored Runner: $STORED_RUNNER"
+
+      - name: Compare versions
+        id: compare
+        run: |
+          FLUTTER_CHANGED="false"
+          RUNNER_CHANGED="false"
+          
+          if [ -n "${{ steps.stored.outputs.stored_flutter }}" ] && [ "${{ steps.flutter.outputs.version }}" != "${{ steps.stored.outputs.stored_flutter }}" ]; then
+            FLUTTER_CHANGED="true"
+            echo "🆕 Flutter updated: ${{ steps.stored.outputs.stored_flutter }} → ${{ steps.flutter.outputs.version }}"
+          fi
+          
+          RUNNER_VERSION="${{ steps.runner.outputs.tag }}${{ steps.runner.outputs.digest }}"
+          if [ -n "${{ steps.stored.outputs.stored_runner }}" ] && [ "$RUNNER_VERSION" != "${{ steps.stored.outputs.stored_runner }}" ]; then
+            RUNNER_CHANGED="true"
+            echo "🆕 Runner updated: ${{ steps.stored.outputs.stored_runner }} → $RUNNER_VERSION"
+          fi
+          
+          echo "flutter_changed=$FLUTTER_CHANGED" >> $GITHUB_OUTPUT
+          echo "runner_changed=$RUNNER_CHANGED" >> $GITHUB_OUTPUT
+          echo "runner_version=$RUNNER_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Send Slack notification
+        if: steps.compare.outputs.flutter_changed == 'true' || steps.compare.outputs.runner_changed == 'true'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          MESSAGE="🔄 *GitHub Actions Runner Image Updates Available*\n\n"
+          
+          if [ "${{ steps.compare.outputs.flutter_changed }}" == "true" ]; then
+            MESSAGE+="• *Flutter*: ${{ steps.stored.outputs.stored_flutter }} → ${{ steps.flutter.outputs.version }}\n"
+          fi
+          
+          if [ "${{ steps.compare.outputs.runner_changed }}" == "true" ]; then
+            MESSAGE+="• *actions-runner*: new version available\n"
+          fi
+          
+          MESSAGE+="\nRebuild your runner image to get the latest versions:\n"
+          MESSAGE+="\`\`\`./build-and-push.ps1\`\`\`"
+          
+          curl -fsSL -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\": \"$MESSAGE\"}"
+
+      - name: Update stored versions
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_VARS }}
+        run: |
+          # Update repository variables with current versions
+          # Note: Requires a PAT with repo scope stored as GH_PAT_VARS secret
+          if [ -n "$GH_TOKEN" ]; then
+            gh variable set LAST_FLUTTER_VERSION --body "${{ steps.flutter.outputs.version }}" || true
+            gh variable set LAST_RUNNER_VERSION --body "${{ steps.compare.outputs.runner_version }}" || true
+            echo "✓ Stored versions updated"
+          else
+            echo "⚠ GH_PAT_VARS secret not set - cannot persist version tracking"
+            echo "Add a PAT with 'repo' scope as GH_PAT_VARS secret to enable version tracking"
+          fi
+
+      - name: Summary
+        run: |
+          echo "## Update Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Latest Version |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|----------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Flutter | ${{ steps.flutter.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| actions-runner | ${{ steps.runner.outputs.tag }}${{ steps.runner.outputs.digest }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.compare.outputs.flutter_changed }}" == "true" ] || [ "${{ steps.compare.outputs.runner_changed }}" == "true" ]; then
+            echo "🔔 **Updates detected - Slack notification sent**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No updates detected (or first run)" >> $GITHUB_STEP_SUMMARY
+          fi
+

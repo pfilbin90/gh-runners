@@ -16,8 +16,8 @@ if ([string]::IsNullOrEmpty($GitHubOwner)) {
     exit 1
 }
 
-# GHCR image name
-$ImageName = "ghcr.io/$GitHubOwner/actions-runner-custom"
+# GHCR image name (must match docker-compose.yml)
+$ImageName = "ghcr.io/$GitHubOwner/actions-runner-flutter"
 $FullImageTag = "${ImageName}:${ImageTag}"
 
 Write-Host ""
@@ -90,6 +90,9 @@ if ($push -eq "" -or $push -eq "Y" -or $push -eq "y") {
     Write-Host "Image built but not pushed: $FullImageTag"
     Write-Host "Push manually with: docker push $FullImageTag"
 }
+
+
+
 
 
 

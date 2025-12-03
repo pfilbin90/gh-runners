@@ -3,7 +3,7 @@ name: Rebuild Runner Image
 on:
   schedule:
     # Run at 00:00 UTC on the 1st of every month
-    - cron: '0 0 1 * *'
+    # - cron: '0 0 1 * *'
   workflow_dispatch:
     inputs:
       flutter_version:
