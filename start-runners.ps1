@@ -45,7 +45,3 @@ if ($LASTEXITCODE -eq 0) {
     Write-Error "Failed to start runners"
     exit 1
 }
-
-
-
-
