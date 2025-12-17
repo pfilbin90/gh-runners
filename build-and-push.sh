@@ -47,11 +47,11 @@ if ! docker info 2>&1 | grep -q "ghcr.io"; then
     fi
 fi
 
-# Build the image
+# Build the image (--no-cache ensures Flutter and other tools get latest versions)
 echo ""
 echo "Building image: $FULL_IMAGE_TAG"
-echo "This may take several minutes..."
-docker build -f Dockerfile.runner -t "$FULL_IMAGE_TAG" .
+echo "This may take several minutes (using --no-cache to get latest Flutter)..."
+docker build --no-cache -f Dockerfile.runner -t "$FULL_IMAGE_TAG" .
 
 if [ $? -ne 0 ]; then
     echo "Error: Build failed" >&2
