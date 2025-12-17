@@ -112,6 +112,7 @@ RUN export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
       --force \
   && echo "AVD created successfully"
 
+ARG FLUTTER_CACHE_BUST=1
 # =============================================================================
 # Flutter SDK (automatically fetches latest stable version)
 # Rebuilding the image will pick up the newest stable Flutter release
