@@ -34,21 +34,17 @@ if ($WaitCount -ge $MaxWait) {
 
 # Start the containers
 Write-Host "Starting GitHub Actions runners..."
-docker-compose up -d
+docker compose up -d
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Runners started successfully!"
     # Show status
     Start-Sleep -Seconds 2
-    docker-compose ps
+    docker compose ps
 } else {
     Write-Error "Failed to start runners"
     exit 1
 }
-
-
-
-
 
 
 
