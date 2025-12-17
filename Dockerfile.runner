@@ -57,6 +57,13 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
   && rm -rf /var/lib/apt/lists/*
 
 # =============================================================================
+# Bun (required by claude-code-action)
+# =============================================================================
+RUN curl -fsSL https://bun.sh/install | bash \
+  && ln -s /root/.bun/bin/bun /usr/local/bin/bun \
+  && bun --version
+
+# =============================================================================
 # Google Chrome (stable) + ChromeDriver (auto-matched version)
 # =============================================================================
 RUN wget -qO- https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
