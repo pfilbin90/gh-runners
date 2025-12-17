@@ -47,11 +47,11 @@ if (-not $loginCheck) {
     }
 }
 
-# Build the image
+# Build the image (--no-cache ensures Flutter and other tools get latest versions)
 Write-Host ""
 Write-Host "Building image: $FullImageTag"
-Write-Host "This may take several minutes..."
-docker build -f Dockerfile.runner -t $FullImageTag .
+Write-Host "This may take several minutes (using --no-cache to get latest Flutter)..."
+docker build --no-cache -f Dockerfile.runner -t $FullImageTag .
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Build failed"
