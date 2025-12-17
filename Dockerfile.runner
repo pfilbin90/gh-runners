@@ -57,6 +57,13 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
   && rm -rf /var/lib/apt/lists/*
 
 # =============================================================================
+# Bun (required by claude-code-action)
+# =============================================================================
+RUN curl -fsSL https://bun.sh/install | bash \
+  && ln -s /root/.bun/bin/bun /usr/local/bin/bun \
+  && bun --version
+
+# =============================================================================
 # Google Chrome (stable) + ChromeDriver (auto-matched version)
 # =============================================================================
 RUN wget -qO- https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
@@ -105,6 +112,7 @@ RUN export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
       --force \
   && echo "AVD created successfully"
 
+ARG FLUTTER_CACHE_BUST=1
 # =============================================================================
 # Flutter SDK (automatically fetches latest stable version)
 # Rebuilding the image will pick up the newest stable Flutter release
