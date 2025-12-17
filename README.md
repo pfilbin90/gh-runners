@@ -296,6 +296,82 @@ When updates are detected, you'll get a Slack message like:
 
 ---
 
+## Runner Offline Monitoring & Slack Alerts
+
+Get notified via Slack whenever your GitHub Actions runners go offline. The monitoring script checks runner status periodically and sends alerts when runners transition from online to offline.
+
+### Setup
+
+1. **Ensure you have a Slack Webhook URL:**
+   - If you already set up `SLACK_WEBHOOK_URL` for update notifications, you can reuse it
+   - Otherwise, create one at https://api.slack.com/apps → Create New App → From scratch
+   - Enable "Incoming Webhooks" → Add New Webhook to Workspace
+   - Copy the webhook URL
+
+2. **Add to your `.env` file:**
+   ```env
+   SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+   ```
+   (The script will also read `GH_OWNER`, `GH_REPO`, and `GH_PAT` from `.env`)
+
+3. **Set up automated monitoring:**
+   ```powershell
+   .\setup-monitor.ps1 -IntervalMinutes 5
+   ```
+   This creates a Windows Task Scheduler task that checks runner status every 5 minutes (adjustable).
+
+### Manual Monitoring
+
+You can also run the monitor manually:
+```powershell
+.\monitor-runners.ps1
+```
+
+Or with a custom Slack webhook:
+```powershell
+.\monitor-runners.ps1 -SlackWebhookUrl "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+```
+
+### How It Works
+
+- The script queries the GitHub API to get current runner status
+- It compares current status with the previous check (stored in `.runner-state.json`)
+- When a runner transitions from `online` to `offline`, a Slack alert is sent
+- The alert includes runner name, OS, architecture, and labels
+- State is persisted between runs to detect transitions
+
+### Slack Alert Example
+
+When a runner goes offline, you'll receive a Slack message like:
+
+> ⚠️ **GitHub Actions Runner Offline**
+> 
+> The following runner(s) have gone *offline*:
+> 
+> • *my-runner-1* (OS: Linux, Arch: X64, Labels: self-hosted, Linux, X64)
+> 
+> **Repository:** your-username/your-repo  
+> **Time:** 2024-01-15 14:30:00 UTC
+> 
+> [View Runners] button
+
+### Managing the Scheduled Task
+
+- **View task:** Open Task Scheduler → Task Scheduler Library → `GitHubActionsRunnerMonitor`
+- **Remove task:**
+  ```powershell
+  Unregister-ScheduledTask -TaskName "GitHubActionsRunnerMonitor" -Confirm:$false
+  ```
+- **Modify interval:** Re-run `setup-monitor.ps1` with a different `-IntervalMinutes` value
+
+### Troubleshooting
+
+- **No alerts received:** Check that `SLACK_WEBHOOK_URL` is set correctly in `.env`
+- **Script fails:** Ensure `GH_PAT` has `repo` scope and Actions are enabled for the repository
+- **State file issues:** Delete `.runner-state.json` to reset state tracking
+
+---
+
 ## Files Reference
 
 | File | Purpose |
@@ -307,6 +383,8 @@ When updates are detected, you'll get a Slack message like:
 | `start-runners.ps1` | Start runners (for Task Scheduler) |
 | `update-runners.ps1` | Pull latest image and restart |
 | `update-synology-runners.sh` | Update script for Synology |
+| `monitor-runners.ps1` | Monitor runner status and send Slack alerts |
+| `setup-monitor.ps1` | Set up scheduled monitoring task |
 | `.github/workflows/check-updates.yml` | Daily update checker with Slack notifications |
 | `SYNOLOGY.md` | Detailed Synology setup guide |
 
