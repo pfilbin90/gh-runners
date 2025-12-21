@@ -32,8 +32,11 @@ sudo mkdir -p /volume1/gh-runner/{work,pub-cache,npm-cache,pnpm-store,flutter-ca
 # Create cache subdirectories for runner 2
 sudo mkdir -p /volume1/gh-runner2/{work,pub-cache,npm-cache,pnpm-store,flutter-cache}
 
+# Create shared Claude Code directory (used by both runners)
+sudo mkdir -p /volume1/claude-code
+
 # Set proper permissions (runner uses UID 1001)
-sudo chown -R 1001:1001 /volume1/gh-runner /volume1/gh-runner2
+sudo chown -R 1001:1001 /volume1/gh-runner /volume1/gh-runner2 /volume1/claude-code
 ```
 
 ### 3. Upload Registration Script
@@ -95,6 +98,7 @@ docker run -d \
   -v /volume1/gh-runner/npm-cache:/home/runner/.npm \
   -v /volume1/gh-runner/pnpm-store:/home/runner/.local/share/pnpm \
   -v /volume1/gh-runner/flutter-cache:/home/runner/.cache/flutter \
+  -v /volume1/claude-code:/opt/claude-code \
   --entrypoint /bin/bash \
   ghcr.io/your-github-username/actions-runner-flutter:latest \
   -lc /home/runner/register-and-run.sh
@@ -118,6 +122,7 @@ docker run -d \
   -v /volume1/gh-runner2/npm-cache:/home/runner/.npm \
   -v /volume1/gh-runner2/pnpm-store:/home/runner/.local/share/pnpm \
   -v /volume1/gh-runner2/flutter-cache:/home/runner/.cache/flutter \
+  -v /volume1/claude-code:/opt/claude-code \
   --entrypoint /bin/bash \
   ghcr.io/your-github-username/actions-runner-flutter:latest \
   -lc /home/runner/register-and-run.sh
@@ -178,11 +183,45 @@ bash update-synology-runners.sh
    docker logs --tail 20 gh-runner-2
    ```
 
+## Claude Code Scheduled Update
+
+The runners share a pre-installed Claude Code at `/opt/claude-code` to avoid installation overhead on each workflow run. Set up a scheduled update task (every 6 hours) in DSM Task Scheduler:
+
+### Initial Installation
+
+Run once to install Claude Code for the first time:
+
+```bash
+docker exec gh-runner-1 npm install -g @anthropic-ai/claude-code --prefix /opt/claude-code
+```
+
+### Configure Scheduled Update in DSM
+
+1. Open **Control Panel → Task Scheduler**
+2. Click **Create → Scheduled Task → User-defined script**
+3. Configure:
+   - **Task:** Update Claude Code
+   - **User:** root
+   - **Schedule:** Daily, repeat every 6 hours (starting at midnight)
+   - **Run command:**
+     ```bash
+     docker exec gh-runner-1 npm update -g @anthropic-ai/claude-code --prefix /opt/claude-code 2>&1 | logger -t claude-code-update
+     ```
+4. Click **OK** to save
+
+### Verify Installation
+
+```bash
+docker exec gh-runner-1 /opt/claude-code/bin/claude --version
+```
+
 ## Notes
 
 - **KVM/Hardware Acceleration**: The Synology NAS likely doesn't support `/dev/kvm`, so it's omitted from the commands. Android emulator tests will run in software mode (slower but functional).
 
 - **Persistent Caches**: All package caches (pub, npm, pnpm, Flutter) persist across container restarts in the shared folders, eliminating download time in workflows.
+
+- **Claude Code**: Pre-installed at `/opt/claude-code` and shared between both runners. Updated every 6 hours via DSM Task Scheduler.
 
 - **Ephemeral Runners**: Runners auto-deregister after each job (see `--ephemeral` flag in `register-and-run.sh`). This is intentional for security and ensures clean state for each job.
 

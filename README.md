@@ -223,8 +223,58 @@ The Dockerfile automatically fetches the **latest stable Flutter version** at bu
 
 - **Ephemeral runners**: Auto-deregister after each job for clean state
 - **Persistent caches**: pub, npm, pnpm, Flutter caches survive restarts
+- **Pre-installed Claude Code**: Shared volume with auto-updates every 6 hours
 - **Docker-in-Docker**: Host Docker socket mounted for container workflows
 - **KVM acceleration**: Hardware-accelerated Android emulator (desktop only)
+
+---
+
+## Claude Code Pre-Installation
+
+The runners include a shared Docker volume (`claude-code`) for pre-installed Claude Code CLI. This avoids installation overhead on each AI Review Autofix workflow run.
+
+### Initial Installation (Windows)
+
+After starting runners for the first time:
+
+```powershell
+# Install Claude Code into the shared volume
+docker exec gh-runners-runner-1-1 npm install -g @anthropic-ai/claude-code --prefix /opt/claude-code
+
+# Verify installation
+docker exec gh-runners-runner-1-1 /opt/claude-code/bin/claude --version
+```
+
+### Scheduled Updates (Every 6 Hours)
+
+**Windows:** Set up a scheduled task to keep Claude Code updated:
+
+```powershell
+# Using Task Scheduler GUI:
+# 1. Open Task Scheduler
+# 2. Create Basic Task -> "Update Claude Code"
+# 3. Trigger: Daily, repeat every 6 hours
+# 4. Action: Start a program
+#    Program: powershell.exe
+#    Arguments: -ExecutionPolicy Bypass -File "C:\repos\gh-runners\update-claude-code.ps1"
+```
+
+Or run manually:
+
+```powershell
+.\update-claude-code.ps1
+```
+
+**Synology:** See [SYNOLOGY.md](SYNOLOGY.md#claude-code-scheduled-update) for DSM Task Scheduler setup.
+
+### Workflow Configuration
+
+The `ai-review-autofix.yml` workflow is configured to use the pre-installed Claude Code:
+
+```yaml
+path_to_claude_code_executable: /opt/claude-code/bin/claude
+path_to_bun_executable: /usr/local/bin/bun
+```
 
 ---
 
@@ -382,6 +432,7 @@ When a runner goes offline, you'll receive a Slack message like:
 | `build-and-push.ps1` | Build and push image to GHCR |
 | `start-runners.ps1` | Start runners (for Task Scheduler) |
 | `update-runners.ps1` | Pull latest image and restart |
+| `update-claude-code.ps1` | Update Claude Code in shared volume |
 | `update-synology-runners.sh` | Update script for Synology |
 | `monitor-runners.ps1` | Monitor runner status and send Slack alerts |
 | `setup-monitor.ps1` | Set up scheduled monitoring task |

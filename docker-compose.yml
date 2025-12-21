@@ -15,6 +15,7 @@ x-runner-vols: &runner-vols
   - npm-cache:/home/runner/.npm
   - pnpm-store:/home/runner/.local/share/pnpm
   - flutter-cache:/home/runner/.cache/flutter
+  - claude-code:/opt/claude-code
 
 x-runner-svc: &runner-svc
   # Use pre-built image from GitHub Container Registry
@@ -58,3 +59,4 @@ volumes:
   npm-cache:
   pnpm-store:
   flutter-cache:
+  claude-code:
