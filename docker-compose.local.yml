@@ -1,0 +1,25 @@
+# Override for local ARM64 Mac - builds from Dockerfile instead of pulling image
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+
+services:
+  runner-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.runner.arm64
+    image: actions-runner-flutter:local-arm64
+    devices: !reset []
+  runner-2:
+    image: actions-runner-flutter:local-arm64
+    devices: !reset []
+    depends_on:
+      - runner-1
+  runner-3:
+    image: actions-runner-flutter:local-arm64
+    devices: !reset []
+    depends_on:
+      - runner-1
+  runner-4:
+    image: actions-runner-flutter:local-arm64
+    devices: !reset []
+    depends_on:
+      - runner-1

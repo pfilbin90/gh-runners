@@ -132,6 +132,50 @@ docker compose up -d
 
 ---
 
+## Deployment: ARM64 Mac (Apple Silicon)
+
+For running on Apple Silicon Macs. Uses a simplified ARM64 Dockerfile without Chrome or Android emulator (those require x86_64).
+
+### Initial Setup
+
+1. Clone this repo
+2. Create `.env` file (same as Windows)
+3. Build and start:
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+   ```
+
+### How It Works
+
+The `docker-compose.local.yml` override:
+- Builds from `Dockerfile.runner.arm64` instead of pulling from GHCR
+- Only `runner-1` builds the image; others reuse it via `depends_on`
+- Uses `devices: !reset []` to remove the `/dev/kvm` mapping (doesn't exist on macOS)
+
+### Daily Operations
+
+```bash
+# Start runners
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+
+# Stop runners
+docker compose -f docker-compose.yml -f docker-compose.local.yml down
+
+# View logs
+docker compose -f docker-compose.yml -f docker-compose.local.yml logs -f
+
+# Rebuild after Dockerfile changes
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+```
+
+### Limitations
+
+- No Android emulator (no KVM on macOS, no x86_64 system images for ARM)
+- No Chrome/ChromeDriver (x86_64 only)
+- Best suited for Flutter build/test tasks that don't require emulator or browser
+
+---
+
 ## Deployment: Synology NAS
 
 See [SYNOLOGY.md](SYNOLOGY.md) for detailed instructions.
@@ -206,17 +250,16 @@ The Dockerfile automatically fetches the **latest stable Flutter version** at bu
 │  └─────────────────────────────────────────────────────┘   │
 └──────────────────────────┬──────────────────────────────────┘
                            │
-         ┌─────────────────┴─────────────────┐
-         ▼                                   ▼
-┌─────────────────────┐           ┌─────────────────────┐
-│  Windows Desktop    │           │  Synology NAS       │
-│  (docker-compose)   │           │  (docker run)       │
-│                     │           │                     │
-│  runner-1           │           │  gh-runner-1        │
-│  runner-2           │           │  gh-runner-2        │
-│  runner-3           │           │                     │
-│  runner-4           │           │                     │
-└─────────────────────┘           └─────────────────────┘
+    ┌──────────────────────┼──────────────────────┐
+    ▼                      ▼                      ▼
+┌────────────────┐  ┌────────────────┐  ┌────────────────┐
+│ Windows Desktop│  │ ARM64 Mac      │  │ Synology NAS   │
+│ docker-compose │  │ docker-compose │  │ docker run     │
+│                │  │ + local.yml    │  │                │
+│ runner-1..4    │  │ runner-1..4    │  │ gh-runner-1..2 │
+│ x86_64 image   │  │ arm64 image    │  │ x86_64 image   │
+│ + KVM + Chrome │  │ build-only     │  │ no KVM         │
+└────────────────┘  └────────────────┘  └────────────────┘
 ```
 
 ### Key Features
@@ -426,8 +469,10 @@ When a runner goes offline, you'll receive a Slack message like:
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile.runner` | Runner image definition |
-| `docker-compose.yml` | Multi-runner orchestration (desktop) |
+| `Dockerfile.runner` | Runner image definition (x86_64) |
+| `Dockerfile.runner.arm64` | Runner image for Apple Silicon (ARM64) |
+| `docker-compose.yml` | Multi-runner orchestration (Windows/Linux) |
+| `docker-compose.local.yml` | Override for local ARM64 Mac development |
 | `register-and-run.sh` | Container entrypoint script |
 | `build-and-push.ps1` | Build and push image to GHCR |
 | `start-runners.ps1` | Start runners (for Task Scheduler) |

@@ -1,5 +1,3 @@
-version: "3.8"
-
 x-runner-env: &runner-env
   GH_OWNER: ${GH_OWNER}
   GH_REPO: ${GH_REPO}
@@ -26,29 +24,32 @@ x-runner-svc: &runner-svc
   #   dockerfile: Dockerfile.runner
   environment: *runner-env
   volumes: *runner-vols
-  devices:
-    - /dev/kvm:/dev/kvm
   entrypoint: ["/bin/bash","-lc","/home/runner/register-and-run.sh"]
   restart: always
 
+# KVM device for Linux hosts (enables hardware-accelerated Android emulator)
+x-kvm-device: &kvm-device
+  devices:
+    - /dev/kvm:/dev/kvm
+
 services:
   runner-1:
-    <<: *runner-svc
+    <<: [*runner-svc, *kvm-device]
     environment:
       <<: *runner-env
       RUNNER_NAME: ${RUNNER_NAME_PREFIX}-1
   runner-2:
-    <<: *runner-svc
+    <<: [*runner-svc, *kvm-device]
     environment:
       <<: *runner-env
       RUNNER_NAME: ${RUNNER_NAME_PREFIX}-2
   runner-3:
-    <<: *runner-svc
+    <<: [*runner-svc, *kvm-device]
     environment:
       <<: *runner-env
       RUNNER_NAME: ${RUNNER_NAME_PREFIX}-3
   runner-4:
-    <<: *runner-svc
+    <<: [*runner-svc, *kvm-device]
     environment:
       <<: *runner-env
       RUNNER_NAME: ${RUNNER_NAME_PREFIX}-4

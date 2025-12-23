@@ -8,12 +8,16 @@ Self-hosted GitHub Actions runners for Flutter CI/CD, packaged as Docker contain
 
 ## Architecture
 
-- **Dockerfile.runner**: Custom runner image extending `ghcr.io/actions/actions-runner` with Flutter, Android SDK (including pre-created AVD), Node.js, Chrome, and build tools
+- **Dockerfile.runner**: Custom runner image (x86_64) extending `ghcr.io/actions/actions-runner` with Flutter, Android SDK (including pre-created AVD), Node.js, Chrome, and build tools
+- **Dockerfile.runner.arm64**: ARM64 variant for Apple Silicon Macs (no Chrome/emulator, build-only)
 - **docker-compose.yml**: Runs 4 parallel ephemeral runners with shared caches for pub, npm, pnpm, and Flutter
+- **docker-compose.local.yml**: Override for local ARM64 Mac development (builds from Dockerfile.runner.arm64, removes KVM)
 - **register-and-run.sh**: Entrypoint script that fetches GitHub registration token and configures ephemeral runner
 - **.github/workflows/rebuild-image.yml**: Monthly automated image rebuild with Slack notifications
 
 ## Common Commands
+
+### Windows (Production)
 
 ```powershell
 # Start runners
@@ -32,6 +36,26 @@ docker compose logs -f
 
 # Build image locally (instead of pulling from GHCR)
 .\build-and-push.ps1 <github-username>
+```
+
+### macOS ARM64 (Local Development)
+
+```bash
+# Build and start runners (first time or after Dockerfile changes)
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+
+# Start runners (image already built)
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+
+# Stop runners
+docker compose -f docker-compose.yml -f docker-compose.local.yml down
+
+# View logs
+docker compose -f docker-compose.yml -f docker-compose.local.yml logs -f
+
+# Rebuild after Dockerfile.runner.arm64 changes
+docker compose -f docker-compose.yml -f docker-compose.local.yml build runner-1
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
 ```
 
 ## Environment Configuration
@@ -58,8 +82,9 @@ Copy `.env.example` to `.env` and set:
 
 - Runners are **ephemeral** (`--ephemeral` flag) - they auto-deregister after one job
 - Docker socket is mounted from host for Docker-in-Docker support
-- `/dev/kvm` is mounted for hardware-accelerated Android emulator
+- `/dev/kvm` is mounted for hardware-accelerated Android emulator (Linux hosts only, via `x-kvm-device` anchor)
 - Volumes persist package caches across container restarts
+- **ARM64 Mac note**: The `docker-compose.local.yml` override uses `!reset` to remove KVM device mapping since `/dev/kvm` doesn't exist on macOS
 
 ## Synology NAS Deployment
 
