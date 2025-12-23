@@ -66,6 +66,16 @@ echo "[runner] using RUNNER_DIR=$RUNNER_DIR"
 cd "$RUNNER_DIR"
 export RUNNER_ALLOW_RUNASROOT=1
 
+# --- Clean up stale configuration from previous ephemeral runs ---
+# Ephemeral runners deregister from GitHub after completing a job, but
+# local config files may persist if the container restarts without being
+# fully recreated. The --replace flag only works if the runner is still
+# registered with GitHub, so we must remove orphaned local config first.
+if [ -f ".runner" ]; then
+  echo "[runner] cleaning up stale configuration files ..."
+  rm -f .runner .credentials .credentials_rsaparams .env .path 2>/dev/null || true
+fi
+
 # --- Configure ephemeral runner ---
 ./config.sh \
   --ephemeral \
