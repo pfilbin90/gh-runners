@@ -61,3 +61,9 @@ volumes:
   pnpm-store:
   flutter-cache:
   claude-code:
+
+networks:
+  default:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: "1500"
