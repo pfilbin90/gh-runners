@@ -32,7 +32,7 @@ if [ "$HTTP" != "201" ]; then
   echo "[runner] GitHub API http=$HTTP"
   echo "--- RESPONSE HEADERS ---"; cat /tmp/h || true
   echo "--- RESPONSE BODY ---"; cat /tmp/b || true
-  echo "[runner] If http=404, ensure Actions are enabled for the repo (Settings → Actions)."
+  echo "[runner] If http=404, ensure Actions are enabled for the repo (Settings â†’ Actions)."
   exit 1
 fi
 REG_TOKEN=$(jq -r .token < /tmp/b)
