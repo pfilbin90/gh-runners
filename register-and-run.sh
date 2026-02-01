@@ -2,15 +2,22 @@
 set -euo pipefail
 
 : "${GH_OWNER:?}"
-: "${GH_REPO:?}"
 : "${GH_PAT:?}"
-: "${RUNNER_LABELS:=self-hosted,Windows,X64}"
-: "${RUNNER_NAME:=spinfreeze-$(hostname)-$$}"
+: "${GH_REPO:=}"  # Optional - leave empty for org-level registration
+: "${RUNNER_LABELS:=self-hosted,Linux,X64}"
+: "${RUNNER_NAME:=runner-$(hostname)-$$}"
 : "${RUNNER_GROUP:=Default}"
 
-API="https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/actions/runners/registration-token"
-
-echo "[runner] starting; repo=${GH_OWNER}/${GH_REPO} labels=${RUNNER_LABELS} group=${RUNNER_GROUP}"
+# Determine if org-level or repo-level registration
+if [ -z "$GH_REPO" ]; then
+  API="https://api.github.com/orgs/${GH_OWNER}/actions/runners/registration-token"
+  RUNNER_URL="https://github.com/${GH_OWNER}"
+  echo "[runner] starting; org=${GH_OWNER} labels=${RUNNER_LABELS} group=${RUNNER_GROUP}"
+else
+  API="https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/actions/runners/registration-token"
+  RUNNER_URL="https://github.com/${GH_OWNER}/${GH_REPO}"
+  echo "[runner] starting; repo=${GH_OWNER}/${GH_REPO} labels=${RUNNER_LABELS} group=${RUNNER_GROUP}"
+fi
 
 # --- Get a fresh registration token ---
 echo "[runner] fetching registration token ..."
@@ -81,7 +88,7 @@ fi
   --ephemeral \
   --unattended \
   --replace \
-  --url "https://github.com/${GH_OWNER}/${GH_REPO}" \
+  --url "${RUNNER_URL}" \
   --token "${REG_TOKEN}" \
   --name "${RUNNER_NAME}" \
   --labels "${RUNNER_LABELS}" \
