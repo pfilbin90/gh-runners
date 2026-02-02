@@ -18,7 +18,8 @@ x-runner-vols: &runner-vols
 x-runner-svc: &runner-svc
   # Use pre-built image from GitHub Container Registry
   # To build locally instead, comment out 'image' and uncomment 'build'
-  image: ghcr.io/${GH_OWNER}/actions-runner-flutter:latest
+  # Note: GHCR_OWNER must be lowercase (Docker requirement)
+  image: ghcr.io/${GHCR_OWNER:-pfilbin90}/actions-runner-flutter:latest
   # build:
   #   context: .
   #   dockerfile: Dockerfile.runner
