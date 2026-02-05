@@ -27,6 +27,12 @@ x-runner-svc: &runner-svc
   volumes: *runner-vols
   entrypoint: ["/bin/bash","-lc","/home/runner/register-and-run.sh"]
   restart: always
+  # Explicit DNS servers to prevent resolution failures under load
+  # Docker's internal DNS proxy can fail during heavy Gradle builds
+  dns:
+    - 8.8.8.8
+    - 8.8.4.4
+    - 1.1.1.1
 
 # KVM device for Linux hosts (enables hardware-accelerated Android emulator)
 x-kvm-device: &kvm-device
