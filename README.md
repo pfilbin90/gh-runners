@@ -168,6 +168,18 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml logs -f
 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 
+### Force rebuild after Flutter/tool update
+
+To pick up a new Flutter stable release (or other tool updates), rebuild the image without cache so the install layers run again:
+
+```bash
+# Rebuild image from scratch (no cache), then start
+docker compose -f docker-compose.yml -f docker-compose.local.yml build --no-cache runner-1
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+```
+
+Using `--no-cache` ensures the image rebuilds from scratch so the Dockerfile fetches the latest Flutter (and other tools) at build time.
+
 ### Limitations
 
 - No Android emulator (no KVM on macOS, no x86_64 system images for ARM)
@@ -224,8 +236,9 @@ Rebuild whenever you want to pick up:
 - Android SDK updates
 - Security patches
 
+**Windows (pull from GHCR):**
+
 ```powershell
-# On Windows
 .\build-and-push.ps1 <your-github-username>
 
 # Then update local runners
@@ -234,6 +247,15 @@ Rebuild whenever you want to pick up:
 # And update Synology runners (via SSH)
 bash update-synology-runners.sh
 ```
+
+**ARM64 Mac (Apple Silicon):** You build locally (no GHCR). To force a full rebuild and get the latest Flutter/tools:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml build --no-cache runner-1
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+```
+
+See [Deployment: ARM64 Mac (Apple Silicon)](#deployment-arm64-mac-apple-silicon) for more detail.
 
 The Dockerfile automatically fetches the **latest stable Flutter version** at build time - no manual version bumping needed.
 
