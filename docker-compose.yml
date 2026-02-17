@@ -27,6 +27,12 @@ x-runner-svc: &runner-svc
   volumes: *runner-vols
   entrypoint: ["/bin/bash","-lc","/home/runner/register-and-run.sh"]
   restart: always
+  # Cap each runner so one container can't starve the others.
+  # Budget: Gradle JVM ~2.8GB + emulator 1.5GB + Flutter/OS ~1.5GB ≈ 6GB
+  # 12GB limit gives headroom for spikes without letting a single runner
+  # consume all host RAM when 4 containers run integration tests concurrently.
+  mem_limit: 12g
+  memswap_limit: 14g
   # Explicit DNS servers to prevent resolution failures under load
   # Docker's internal DNS proxy can fail during heavy Gradle builds
   dns:
