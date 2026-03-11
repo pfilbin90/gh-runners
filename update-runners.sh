@@ -47,7 +47,8 @@ fi
 echo "  $(docker --version)"
 echo ""
 
-# Pull latest image
+# Pull latest image (always from registry to avoid stale cache)
+# Image is always ghcr.io/.../actions-runner-flutter:latest; local builds must be pushed first.
 echo "Pulling latest runner image..."
 docker compose pull
 if [ $? -ne 0 ]; then
@@ -78,9 +79,9 @@ docker compose down
 echo "  Runners stopped"
 echo ""
 
-# Start with new image
+# Start with new image (--pull always ensures we use registry latest, not cached)
 echo "Starting runners with new image..."
-docker compose up -d
+docker compose up -d --pull always
 echo "  Runners started"
 echo ""
 

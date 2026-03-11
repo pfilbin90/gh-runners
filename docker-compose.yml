@@ -26,7 +26,17 @@ x-runner-svc: &runner-svc
   environment: *runner-env
   volumes: *runner-vols
   entrypoint: ["/bin/bash","-lc","/home/runner/register-and-run.sh"]
-  restart: always
+  # The entrypoint script loops internally (re-registers after each ephemeral
+  # job), so the container should rarely exit. "unless-stopped" is a safety net
+  # for unexpected crashes without encouraging Docker to churn container restarts.
+  restart: unless-stopped
+  # Limit log size to prevent unbounded growth from ephemeral runner restarts
+  # (each restart cycle produces verbose registration/connection logs)
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
   # Cap each runner so one container can't starve the others.
   # Budget: Gradle JVM ~2.8GB + emulator 1.5GB + Flutter/OS ~1.5GB ≈ 6GB
   # 12GB limit gives headroom for spikes without letting a single runner

@@ -126,11 +126,141 @@ jobs:
             echo "✅ No updates detected (or first run)" >> $GITHUB_STEP_SUMMARY
           fi
 
+  check-docker-desktop-cpu-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Docker Desktop high-CPU bug status
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Track both issues for the com.docker.backend high-CPU bug (4.58+)
+          # docker/for-win #15036 and docker/desktop-feedback #152
+          FIXED="false"
 
+          for ISSUE in "docker/for-win/issues/15036" "docker/desktop-feedback/issues/152"; do
+            REPO="$(echo "$ISSUE" | cut -d'/' -f1-2)"
+            NUMBER="$(echo "$ISSUE" | cut -d'/' -f4)"
 
+            STATE="$(gh issue view "$NUMBER" --repo "$REPO" --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")"
+            echo "$REPO#$NUMBER state: $STATE"
 
+            if [ "$STATE" == "CLOSED" ]; then
+              FIXED="true"
+              FIXED_ISSUE="$REPO#$NUMBER"
 
+              # Get recent comments for context on the fix
+              LAST_COMMENTS="$(gh issue view "$NUMBER" --repo "$REPO" --json comments \
+                --jq '[.comments[-3:][] | .body[:200]] | join("\n---\n")' 2>/dev/null || echo "")"
+              echo "fix_context<<EOF" >> "$GITHUB_OUTPUT"
+              echo "$LAST_COMMENTS" >> "$GITHUB_OUTPUT"
+              echo "EOF" >> "$GITHUB_OUTPUT"
+              break
+            fi
+          done
 
+          echo "fixed=$FIXED" >> "$GITHUB_OUTPUT"
+          echo "fixed_issue=${FIXED_ISSUE:-}" >> "$GITHUB_OUTPUT"
+
+          # Also check if a new Docker Desktop version was released that might contain the fix
+          LATEST_DD=$(curl -fsSL "https://desktop.docker.com/win/main/amd64/appcast.xml" 2>/dev/null \
+            | grep -oP 'sparkle:version="\K[^"]+' | head -1 || echo "unknown")
+          echo "latest_dd=$LATEST_DD" >> "$GITHUB_OUTPUT"
+          echo "Latest Docker Desktop: $LATEST_DD"
+
+      - name: Notify Slack if fixed
+        if: steps.check.outputs.fixed == 'true'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL not configured, skipping"
+            exit 0
+          fi
+
+          ISSUE_URL="https://github.com/${{ steps.check.outputs.fixed_issue }}"
+          LATEST_DD="${{ steps.check.outputs.latest_dd }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          SLACK_MESSAGE=$(cat <<EOF
+          {
+            "attachments": [
+              {
+                "color": "good",
+                "blocks": [
+                  {
+                    "type": "header",
+                    "text": {
+                      "type": "plain_text",
+                      "text": "Docker Desktop High-CPU Bug Fixed!"
+                    }
+                  },
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": "The \`com.docker.backend\` high-CPU bug has been marked as resolved.\n\n*Issue:* <${ISSUE_URL}|${{ steps.check.outputs.fixed_issue }}>\n*Latest Docker Desktop:* \`${LATEST_DD}\`\n\nYou can update Docker Desktop from 4.57.0 to the latest version."
+                    }
+                  },
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": "*Recent comments on the fix:*\n\`\`\`${{ steps.check.outputs.fix_context }}\`\`\`"
+                    }
+                  },
+                  {
+                    "type": "actions",
+                    "elements": [
+                      {
+                        "type": "button",
+                        "text": {
+                          "type": "plain_text",
+                          "text": "View Issue"
+                        },
+                        "url": "${ISSUE_URL}"
+                      },
+                      {
+                        "type": "button",
+                        "text": {
+                          "type": "plain_text",
+                          "text": "View Workflow"
+                        },
+                        "url": "${RUN_URL}"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+          EOF
+          )
+
+          curl -fsSL -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "$SLACK_MESSAGE"
+
+      - name: Summary
+        env:
+          BUG_FIXED: ${{ steps.check.outputs.fixed }}
+          LATEST_DD: ${{ steps.check.outputs.latest_dd }}
+        run: |
+          {
+            echo "## Docker Desktop CPU Bug Status"
+            echo ""
+            echo "| Detail | Value |"
+            echo "|--------|-------|"
+            echo "| Bug Fixed | ${BUG_FIXED} |"
+            echo "| Latest Docker Desktop | ${LATEST_DD} |"
+            echo "| Tracked Issues | docker/for-win#15036, docker/desktop-feedback#152 |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${BUG_FIXED}" == "true" ]; then
+            echo "**The bug has been fixed! Slack notification sent.**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Bug is still open. Pinned to Docker Desktop 4.57.0." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
 
 

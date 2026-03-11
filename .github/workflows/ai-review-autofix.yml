@@ -1,0 +1,415 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: AI Review Autofix
+run-name: AI Review Autofix
+
+# When AI reviewers (CodeRabbit + Gemini) complete reviews on a PR,
+# use Claude Code to fix issues. Also supports manual triggering via `/autofix` PR comments.
+
+on:
+  pull_request_review:
+    types: [submitted]
+  check_run:
+    types: [completed]
+  check_suite:
+    types: [completed]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to run autofix on'
+        required: true
+        type: number
+
+concurrency:
+  group: ai-review-autofix-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.event.check_run.pull_requests[0].number || github.event.check_suite.pull_requests[0].number || 'unknown' }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request_review' &&
+        (github.event.review.user.login == 'coderabbitai[bot]' ||
+         github.event.review.user.login == 'coderabbitai' ||
+         github.event.review.user.login == 'gemini-code-assist[bot]' ||
+         github.event.review.user.login == 'gemini-code-assist')) ||
+      (github.event_name == 'check_run' &&
+        (contains(github.event.check_run.name, 'CodeRabbit') ||
+         contains(github.event.check_run.app.slug, 'coderabbit'))) ||
+      (github.event_name == 'check_suite' &&
+        contains(github.event.check_suite.app.slug, 'coderabbit')) ||
+      (github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request != null &&
+        (github.event.comment.user.login == 'coderabbitai[bot]' ||
+         github.event.comment.user.login == 'coderabbitai' ||
+         github.event.comment.user.login == 'gemini-code-assist[bot]' ||
+         github.event.comment.user.login == 'gemini-code-assist' ||
+         contains(github.event.comment.body, '/autofix')))
+    runs-on: ubuntu-latest
+    permissions:
+      checks: read
+      contents: read
+      pull-requests: read
+      issues: read
+    outputs:
+      proceed: ${{ steps.check.outputs.proceed }}
+      pr_number: ${{ steps.check.outputs.pr_number }}
+      head_ref: ${{ steps.check.outputs.head_ref }}
+      unaddressed_comment_ids: ${{ steps.check.outputs.unaddressed_comment_ids }}
+      unaddressed_count: ${{ steps.check.outputs.unaddressed_count }}
+    steps:
+      - name: Check if both AI reviewers have participated
+        id: check
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const isIssueComment = context.eventName === 'issue_comment';
+            const commentBody = isIssueComment ? String(context.payload.comment?.body ?? '') : '';
+            const commentAuthorAssociation = isIssueComment
+              ? String(context.payload.comment?.author_association ?? '')
+              : '';
+            const trustedAssociations = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+            const isCommandTrigger = isIssueComment && /(^|\n)\s*\/autofix\b/i.test(commentBody);
+
+            const isManual = context.eventName === 'workflow_dispatch';
+            let prNumber;
+            if (isManual) {
+              prNumber = Number(context.payload.inputs?.pr_number);
+            } else if (context.eventName === 'check_run') {
+              const prs = Array.isArray(context.payload.check_run?.pull_requests)
+                ? context.payload.check_run.pull_requests
+                : [];
+              if (prs.length === 0) {
+                core.info('check_run event is not associated with a PR. Skipping.');
+                core.setOutput('proceed', 'false');
+                return;
+              }
+              prNumber = prs[0]?.number;
+            } else if (context.eventName === 'check_suite') {
+              const prs = Array.isArray(context.payload.check_suite?.pull_requests)
+                ? context.payload.check_suite.pull_requests
+                : [];
+              if (prs.length === 0) {
+                core.info('check_suite event is not associated with a PR. Skipping.');
+                core.setOutput('proceed', 'false');
+                return;
+              }
+              prNumber = prs[0]?.number;
+            } else if (context.eventName === 'pull_request_review') {
+              prNumber = context.payload.pull_request?.number;
+            } else if (context.eventName === 'issue_comment') {
+              const isPullRequest = Boolean(context.payload.issue?.pull_request);
+              if (!isPullRequest) {
+                core.info('Issue comment is not on a PR. Skipping.');
+                core.setOutput('proceed', 'false');
+                return;
+              }
+              prNumber = context.payload.issue?.number;
+            }
+
+            if (!Number.isInteger(prNumber) || prNumber <= 0) {
+              core.setFailed(`Invalid PR number: ${prNumber}`);
+              return;
+            }
+
+            if (isCommandTrigger && !trustedAssociations.has(commentAuthorAssociation)) {
+              core.info(
+                `Ignoring /autofix from untrusted author association: ${commentAuthorAssociation}`,
+              );
+              core.setOutput('proceed', 'false');
+              return;
+            }
+
+            const pr = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: prNumber,
+            });
+
+            const skipToken = '[skip ai-review]';
+            const headSha = pr.data.head?.sha;
+            if (headSha) {
+              try {
+                const headCommit = await github.rest.git.getCommit({
+                  owner,
+                  repo,
+                  commit_sha: headSha,
+                });
+                const headMessage = headCommit.data?.message ?? '';
+                const shouldSkip = headMessage.includes(skipToken);
+                if (shouldSkip && !isManual && !isCommandTrigger) {
+                  core.info(`Skipping PR #${prNumber}: head commit message contains ${skipToken}.`);
+                  core.setOutput('proceed', 'false');
+                  return;
+                }
+              } catch (error) {
+                core.warning(`Unable to fetch head commit for PR #${prNumber}: ${error?.message ?? error}`);
+              }
+            }
+
+            const headFullName = pr.data.head?.repo?.full_name ?? '';
+            const baseFullName = pr.data.base?.repo?.full_name ?? `${owner}/${repo}`;
+            const isSameRepo = headFullName === baseFullName && headFullName === `${owner}/${repo}`;
+            if (!isSameRepo) {
+              core.info(
+                `Skipping PR #${prNumber}: head repo (${headFullName}) is not the base repo (${baseFullName}).`,
+              );
+              core.setOutput('proceed', 'false');
+              return;
+            }
+
+            core.setOutput('pr_number', String(prNumber));
+            core.setOutput('head_ref', pr.data.head.ref);
+
+            const codeRabbitLogins = new Set(['coderabbitai[bot]', 'coderabbitai']);
+            const geminiLogins = new Set(['gemini-code-assist[bot]', 'gemini-code-assist']);
+
+            function setHasAny(set, candidates) {
+              for (const candidate of candidates) {
+                if (set.has(candidate)) return true;
+              }
+              return false;
+            }
+
+            const reviews = await github.rest.pulls.listReviews({
+              owner,
+              repo,
+              pull_number: prNumber,
+              per_page: 100,
+            });
+            const reviewComments = await github.paginate(
+              github.rest.pulls.listReviewComments,
+              { owner, repo, pull_number: prNumber, per_page: 100 },
+            );
+            const issueComments = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+
+            const reviewers = new Set(reviews.data.map((r) => r.user.login));
+            const inlineCommenters = new Set(reviewComments.map((c) => c.user.login));
+            const commenters = new Set(issueComments.data.map((c) => c.user.login));
+
+            const hasCodeRabbit =
+              setHasAny(reviewers, codeRabbitLogins) ||
+              setHasAny(inlineCommenters, codeRabbitLogins) ||
+              setHasAny(commenters, codeRabbitLogins);
+            const hasGemini =
+              setHasAny(reviewers, geminiLogins) ||
+              setHasAny(inlineCommenters, geminiLogins) ||
+              setHasAny(commenters, geminiLogins);
+
+            let hasCodeRabbitCheck = false;
+            try {
+              const checkRuns = await github.rest.checks.listForRef({
+                owner,
+                repo,
+                ref: pr.data.head.sha,
+                per_page: 100,
+              });
+              hasCodeRabbitCheck = checkRuns.data.check_runs.some((cr) => {
+                const appSlug = cr.app?.slug ?? '';
+                const name = cr.name ?? '';
+                const isCodeRabbit =
+                  appSlug.toLowerCase().includes('coderabbit') || name.toLowerCase().includes('coderabbit');
+                return isCodeRabbit && cr.status === 'completed';
+              });
+            } catch (error) {
+              core.warning(`Unable to list check-runs for PR #${prNumber}: ${error?.message ?? error}`);
+            }
+
+            const effectiveHasCodeRabbit = hasCodeRabbit || hasCodeRabbitCheck;
+
+            const labels = (pr.data.labels ?? []).map((l) => l.name ?? '');
+            console.log(`PR #${prNumber} labels: ${labels.join(', ')}`);
+            console.log(`Reviewers: ${[...reviewers].join(', ')}`);
+            console.log(`Inline commenters: ${[...inlineCommenters].join(', ')}`);
+            console.log(`Issue commenters: ${[...commenters].join(', ')}`);
+            console.log(`CodeRabbit: ${hasCodeRabbit} (check_run: ${hasCodeRabbitCheck}), Gemini: ${hasGemini}`);
+
+            let shouldProceed = false;
+            if (isManual || isCommandTrigger) {
+              shouldProceed = true;
+            } else if (effectiveHasCodeRabbit && hasGemini) {
+              shouldProceed = true;
+            }
+
+            if (!shouldProceed) {
+              core.info('Waiting for both reviewers to participate. Skipping for now.');
+              core.setOutput('proceed', 'false');
+              core.setOutput('unaddressed_comment_ids', '[]');
+              core.setOutput('unaddressed_count', '0');
+              return;
+            }
+
+            // Pre-compute unaddressed comments
+            const claudeMarkerPattern = /\*\*Claude Code:\*\*/i;
+            const eyesReactionContent = 'eyes';
+
+            const replyMap = new Map();
+            for (const comment of reviewComments) {
+              if (comment.in_reply_to_id) {
+                const parentId = comment.in_reply_to_id;
+                if (!replyMap.has(parentId)) {
+                  replyMap.set(parentId, []);
+                }
+                replyMap.get(parentId).push(comment);
+              }
+            }
+
+            const aiReviewerLogins = new Set([
+              ...codeRabbitLogins,
+              ...geminiLogins,
+            ]);
+            const unaddressedIds = [];
+
+            for (const comment of reviewComments) {
+              if (comment.in_reply_to_id) continue;
+              const authorLogin = comment.user?.login ?? '';
+              if (!aiReviewerLogins.has(authorLogin)) continue;
+
+              const replies = replyMap.get(comment.id) || [];
+              const hasAutofixMarkerReply = replies.some((reply) =>
+                claudeMarkerPattern.test(reply.body ?? ''),
+              );
+              const hasNonAiReply = replies.some((reply) => {
+                const replyAuthor = reply.user?.login ?? '';
+                return replyAuthor !== '' && !aiReviewerLogins.has(replyAuthor);
+              });
+
+              if (hasAutofixMarkerReply || hasNonAiReply) {
+                console.log(
+                  `Comment ${comment.id} already addressed (has reply: marker=${hasAutofixMarkerReply}, nonAI=${hasNonAiReply})`,
+                );
+                continue;
+              }
+
+              let hasEyesReaction = false;
+              try {
+                const reactions = await github.rest.reactions.listForPullRequestReviewComment({
+                  owner,
+                  repo,
+                  comment_id: comment.id,
+                });
+                hasEyesReaction = reactions.data.some(
+                  (r) =>
+                    r.content === eyesReactionContent &&
+                    !aiReviewerLogins.has(r.user?.login ?? ''),
+                );
+              } catch (error) {
+                console.log(`Could not fetch reactions for comment ${comment.id}: ${error?.message}`);
+              }
+
+              if (hasEyesReaction) {
+                console.log(`Comment ${comment.id} already addressed (has reaction)`);
+                continue;
+              }
+
+              unaddressedIds.push(comment.id);
+              console.log(`Comment ${comment.id} is unaddressed (from ${authorLogin})`);
+            }
+
+            console.log(`Found ${unaddressedIds.length} unaddressed comments: ${unaddressedIds.join(', ')}`);
+            const hasActionableWork = unaddressedIds.length > 0 || isManual || isCommandTrigger;
+            if (!hasActionableWork) {
+              core.info('No new unaddressed AI review comments. Skipping.');
+            }
+            core.setOutput('proceed', hasActionableWork ? 'true' : 'false');
+            core.setOutput('unaddressed_comment_ids', JSON.stringify(unaddressedIds));
+            core.setOutput('unaddressed_count', String(unaddressedIds.length));
+
+  autofix:
+    needs: [gate]
+    if: needs.gate.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.head_ref }}
+          token: ${{ secrets.USER_PAT }}
+          fetch-depth: 0
+
+      - name: Configure git
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Run Claude Code to fix issues
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.USER_PAT }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.USER_PAT }}
+          allowed_bots: "coderabbitai[bot],gemini-code-assist[bot],gemini-code-assist"
+          prompt: |
+            You are reviewing PR #${{ needs.gate.outputs.pr_number }} in repo ${{ github.repository }}.
+
+            IMPORTANT: Use ONLY `gh` commands for GitHub operations (not curl or other HTTP tools). `gh` is authenticated via the `GH_TOKEN` environment variable.
+
+            ## Your Task: Address NEW reviewer feedback
+
+            0. Read project conventions in `CLAUDE.md` and follow them.
+
+            1. Address PR review feedback - CRITICAL: ONLY address UNADDRESSED feedback:
+
+               The gate job has pre-computed the list of unaddressed comment IDs for you:
+               - Unaddressed comment IDs: ${{ needs.gate.outputs.unaddressed_comment_ids }}
+               - Count: ${{ needs.gate.outputs.unaddressed_count }}
+
+               If count is 0, skip to step 2.
+
+               For each comment ID in the list above:
+                 a. First, add a reaction to mark it as "in progress" (atomic marker to prevent re-processing):
+                    `gh api repos/${{ github.repository }}/pulls/${{ needs.gate.outputs.pr_number }}/comments/COMMENT_ID/reactions -f content=eyes`
+                 b. Fetch the comment body:
+                    `gh api repos/${{ github.repository }}/pulls/${{ needs.gate.outputs.pr_number }}/comments/COMMENT_ID`
+                 c. Skip if severity is "Trivial" or "Nitpick" unless it's a genuine bug
+                 d. Assess whether it's valid and should be implemented
+                 e. If valid: implement the fix
+                 f. Reply INLINE to the comment (not a summary comment), and include the marker `**Claude Code:**` so the gate job can reliably detect it:
+                    `gh api repos/${{ github.repository }}/pulls/${{ needs.gate.outputs.pr_number }}/comments/COMMENT_ID/replies -f body="**Claude Code:** [what you did or why you skipped]"`
+
+               IMPORTANT: CodeRabbit may also hide suggestions in `<details>` blocks in top-level issue comments.
+               If you've addressed all inline comments but suspect missing feedback:
+                 - `gh api repos/${{ github.repository }}/issues/${{ needs.gate.outputs.pr_number }}/comments`
+               Look for suggestions inside `<details>` sections like "Outside diff range comments".
+
+            2. If you make changes, commit and push:
+               ```bash
+               git add -A && git commit -m "fix(autofix): address PR feedback [skip ai-review]" && git push
+               ```
+
+            3. After addressing all feedback AND after a successful commit+push (if changes were made), post a brief summary comment:
+               `gh pr comment ${{ needs.gate.outputs.pr_number }} --repo ${{ github.repository }} --body "Addressed ${{ needs.gate.outputs.unaddressed_count }} new comments. See inline replies for details."`
+               If unaddressed_count was 0, do NOT post a PR comment (avoid spam on redundant triggers).
+               If you encountered any errors or did not successfully push, do NOT comment.
+
+            Important:
+            - Use ONLY `gh` commands for GitHub operations, never curl or wget
+            - Follow the project's CLAUDE.md conventions
+            - The gate job has already computed which comments need addressing - trust that list
+            - ALWAYS add the reaction BEFORE processing each comment (atomic marker)
+            - Reply INLINE to each comment after addressing it
+
+          claude_args: |
+            --model claude-sonnet-4-6
+            --allowed-tools "Read" "Edit" "Write" "Glob" "Grep" "Bash" "Bash(git:*)" "Bash(gh:*)"
+          additional_permissions: |
+            actions: read
