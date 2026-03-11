@@ -139,10 +139,10 @@ jobs:
           FIXED="false"
 
           for ISSUE in "docker/for-win/issues/15036" "docker/desktop-feedback/issues/152"; do
-            REPO=$(echo "$ISSUE" | cut -d'/' -f1-2)
-            NUMBER=$(echo "$ISSUE" | cut -d'/' -f4)
+            REPO="$(echo "$ISSUE" | cut -d'/' -f1-2)"
+            NUMBER="$(echo "$ISSUE" | cut -d'/' -f4)"
 
-            STATE=$(gh issue view "$NUMBER" --repo "$REPO" --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")
+            STATE="$(gh issue view "$NUMBER" --repo "$REPO" --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")"
             echo "$REPO#$NUMBER state: $STATE"
 
             if [ "$STATE" == "CLOSED" ]; then
@@ -150,22 +150,22 @@ jobs:
               FIXED_ISSUE="$REPO#$NUMBER"
 
               # Get recent comments for context on the fix
-              LAST_COMMENTS=$(gh issue view "$NUMBER" --repo "$REPO" --json comments \
-                --jq '[.comments[-3:][] | .body[:200]] | join("\n---\n")' 2>/dev/null || echo "")
-              echo "fix_context<<EOF" >> $GITHUB_OUTPUT
-              echo "$LAST_COMMENTS" >> $GITHUB_OUTPUT
-              echo "EOF" >> $GITHUB_OUTPUT
+              LAST_COMMENTS="$(gh issue view "$NUMBER" --repo "$REPO" --json comments \
+                --jq '[.comments[-3:][] | .body[:200]] | join("\n---\n")' 2>/dev/null || echo "")"
+              echo "fix_context<<EOF" >> "$GITHUB_OUTPUT"
+              echo "$LAST_COMMENTS" >> "$GITHUB_OUTPUT"
+              echo "EOF" >> "$GITHUB_OUTPUT"
               break
             fi
           done
 
-          echo "fixed=$FIXED" >> $GITHUB_OUTPUT
-          echo "fixed_issue=${FIXED_ISSUE:-}" >> $GITHUB_OUTPUT
+          echo "fixed=$FIXED" >> "$GITHUB_OUTPUT"
+          echo "fixed_issue=${FIXED_ISSUE:-}" >> "$GITHUB_OUTPUT"
 
           # Also check if a new Docker Desktop version was released that might contain the fix
           LATEST_DD=$(curl -fsSL "https://desktop.docker.com/win/main/amd64/appcast.xml" 2>/dev/null \
             | grep -oP 'sparkle:version="\K[^"]+' | head -1 || echo "unknown")
-          echo "latest_dd=$LATEST_DD" >> $GITHUB_OUTPUT
+          echo "latest_dd=$LATEST_DD" >> "$GITHUB_OUTPUT"
           echo "Latest Docker Desktop: $LATEST_DD"
 
       - name: Notify Slack if fixed
@@ -242,22 +242,25 @@ jobs:
             -d "$SLACK_MESSAGE"
 
       - name: Summary
+        env:
+          BUG_FIXED: ${{ steps.check.outputs.fixed }}
+          LATEST_DD: ${{ steps.check.outputs.latest_dd }}
         run: |
-          echo "## Docker Desktop CPU Bug Status" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Bug Fixed | ${{ steps.check.outputs.fixed }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Latest Docker Desktop | ${{ steps.check.outputs.latest_dd }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Tracked Issues | docker/for-win#15036, docker/desktop-feedback#152 |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.check.outputs.fixed }}" == "true" ]; then
-            echo "**The bug has been fixed! Slack notification sent.**" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Docker Desktop CPU Bug Status"
+            echo ""
+            echo "| Detail | Value |"
+            echo "|--------|-------|"
+            echo "| Bug Fixed | ${BUG_FIXED} |"
+            echo "| Latest Docker Desktop | ${LATEST_DD} |"
+            echo "| Tracked Issues | docker/for-win#15036, docker/desktop-feedback#152 |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${BUG_FIXED}" == "true" ]; then
+            echo "**The bug has been fixed! Slack notification sent.**" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "Bug is still open. Pinned to Docker Desktop 4.57.0." >> $GITHUB_STEP_SUMMARY
+            echo "Bug is still open. Pinned to Docker Desktop 4.57.0." >> "$GITHUB_STEP_SUMMARY"
           fi
-
-
 
 
 

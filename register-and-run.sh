@@ -60,13 +60,20 @@ export RUNNER_ALLOW_RUNASROOT=1
 # we loop inside the container. The ephemeral runner exits after one job,
 # then we re-register with a fresh token and start again.
 ITERATION=0
+
+cleanup() {
+  echo "[runner] received shutdown signal, exiting loop ..."
+  exit 0
+}
+trap cleanup SIGTERM SIGINT
+
 while true; do
   ITERATION=$((ITERATION + 1))
   echo "[runner] === iteration $ITERATION ==="
 
   # --- Get a fresh registration token ---
   echo "[runner] fetching registration token ..."
-  HTTP=$(curl -fsS -w "%{http_code}" -D /tmp/h -o /tmp/b -X POST \
+  HTTP=$(curl -fsS --max-time 30 -w "%{http_code}" -D /tmp/h -o /tmp/b -X POST \
     -H "Authorization: token ${GH_PAT}" \
     -H "Accept: application/vnd.github+json" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
@@ -91,7 +98,7 @@ while true; do
   fi
 
   # --- Configure ephemeral runner ---
-  ./config.sh \
+  if ! ./config.sh \
     --ephemeral \
     --unattended \
     --replace \
@@ -99,7 +106,11 @@ while true; do
     --token "${REG_TOKEN}" \
     --name "${RUNNER_NAME}" \
     --labels "${RUNNER_LABELS}" \
-    --runnergroup "${RUNNER_GROUP}"
+    --runnergroup "${RUNNER_GROUP}"; then
+    echo "[runner] config.sh failed, retrying in 30s ..."
+    sleep 30
+    continue
+  fi
 
   echo "[runner] listening for jobs ..."
   ./run.sh || true
