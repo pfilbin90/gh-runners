@@ -44,11 +44,11 @@ Write-Log "Using container: $container"
 
 # Update Claude Code
 try {
-    $output = docker exec $container npm update -g @anthropic-ai/claude-code --prefix /opt/claude-code 2>&1
-    Write-Log "npm update output: $output"
+    $output = docker exec $container bash -c 'npm install -g @anthropic-ai/claude-code --prefix /opt/claude-code' 2>&1
+    Write-Log "npm install output: $output"
 
     # Verify the installation
-    $version = docker exec $container /opt/claude-code/bin/claude --version 2>&1
+    $version = docker exec $container bash -c '/opt/claude-code/bin/claude --version' 2>&1
     Write-Log "Claude Code version: $version"
 
     Write-Log "Claude Code update completed successfully."

@@ -22,7 +22,7 @@ Write-Log "Starting local CLI updates..."
 
 try {
     Write-Log "Updating Claude Code..."
-    $output = npm update -g @anthropic-ai/claude-code 2>&1
+    $output = npm install -g @anthropic-ai/claude-code 2>&1
     Write-Log "npm output: $output"
 
     $version = claude --version 2>&1
@@ -33,7 +33,7 @@ try {
 
 try {
     Write-Log "Updating Gemini CLI..."
-    $output = npm update -g @google/gemini-cli 2>&1
+    $output = npm install -g @google/gemini-cli 2>&1
     Write-Log "npm output: $output"
 
     $version = gemini --version 2>&1
