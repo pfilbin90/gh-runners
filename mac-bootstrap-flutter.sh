@@ -22,11 +22,37 @@ git config --global --add safe.directory /host-flutter
 git config --global --add safe.directory /opt/flutter
 
 HOST_REF=$(git -C /host-flutter rev-parse HEAD)
+HOST_CHANNEL=$(git -C /host-flutter rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 CUR_REF=$(git -C /opt/flutter rev-parse HEAD 2>/dev/null || true)
+CUR_BRANCH=$(git -C /opt/flutter rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+
+# Restores the volume's HEAD to the host's channel branch (e.g. `stable`).
+# Required because plain `git checkout --detach <sha>` below leaves Flutter
+# in detached-HEAD state, which makes `flutter --version` report
+# `channel [user-branch] • unknown source` and breaks `pub get` against any
+# pubspec with a Flutter SDK constraint (pub falls back to `0.0.0-unknown`).
+restore_channel() {
+  if [[ ! "$HOST_CHANNEL" =~ ^(stable|beta|dev|master|main)$ ]]; then
+    echo "[flutter-bootstrap] WARNING: host channel '$HOST_CHANNEL' is not a known release channel; skipping channel pin"
+    return
+  fi
+  git -C /opt/flutter branch -f "$HOST_CHANNEL" HEAD
+  git -C /opt/flutter checkout "$HOST_CHANNEL"
+}
 
 if [ "$HOST_REF" = "$CUR_REF" ] && [ -x /opt/flutter/bin/flutter ]; then
-  echo "[flutter-bootstrap] in sync at $HOST_REF, skipping"
-  exit 0
+  if [ "$CUR_BRANCH" = "$HOST_CHANNEL" ] || [ "$CUR_BRANCH" = "HEAD" ]; then
+    # Volume's SHA matches host but HEAD is detached (CUR_BRANCH=HEAD).
+    # Common after upgrading from the pre-channel-pin version of this script —
+    # restore the channel branch in place without re-fetching.
+    if [ "$CUR_BRANCH" = "HEAD" ]; then
+      echo "[flutter-bootstrap] in sync at $HOST_REF but detached; restoring channel"
+      restore_channel
+    else
+      echo "[flutter-bootstrap] in sync at $HOST_REF on $CUR_BRANCH, skipping"
+    fi
+    exit 0
+  fi
 fi
 
 echo "[flutter-bootstrap] syncing /opt/flutter to host ref $HOST_REF"
@@ -52,6 +78,8 @@ if ! git checkout --detach "$HOST_REF" 2>/dev/null; then
   echo "[flutter-bootstrap] WARNING: could not check out $HOST_REF; leaving volume at ${CUR_REF:-empty}"
   exit 0
 fi
+
+restore_channel
 
 flutter --version
 flutter precache --linux --web --android
