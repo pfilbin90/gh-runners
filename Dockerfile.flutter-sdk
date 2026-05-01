@@ -1,0 +1,12 @@
+# Minimal image for managing Flutter SDK in a shared volume.
+# Used as an init container — populates the flutter-sdk volume, then exits.
+FROM debian:bookworm-slim
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    git curl jq unzip xz-utils ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY init-flutter.sh /usr/local/bin/init-flutter.sh
+RUN chmod +x /usr/local/bin/init-flutter.sh
+
+ENTRYPOINT ["/usr/local/bin/init-flutter.sh"]

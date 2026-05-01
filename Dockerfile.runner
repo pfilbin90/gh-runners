@@ -115,25 +115,11 @@ RUN export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
       --force \
   && echo "AVD created successfully"
 
-ARG FLUTTER_CACHE_BUST=1
 # =============================================================================
-# Flutter SDK (automatically fetches latest stable version)
-# Rebuilding the image will pick up the newest stable Flutter release
+# Flutter SDK path (SDK itself is provided via docker volume mount)
 # =============================================================================
 ENV FLUTTER_HOME=/opt/flutter
 ENV PATH=/opt/claude-code/bin:$FLUTTER_HOME/bin:$FLUTTER_HOME/bin/cache/dart-sdk/bin:$PATH
-
-RUN FLUTTER_VERSION=$(curl -fsSL https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json \
-      | jq -r '[.releases[] | select(.channel == "stable")][0].version') \
-  && test -n "$FLUTTER_VERSION" || { echo "ERROR: Failed to fetch Flutter version"; exit 1; } \
-  && echo "Installing Flutter $FLUTTER_VERSION" \
-  && git clone --depth 1 -b $FLUTTER_VERSION https://github.com/flutter/flutter.git $FLUTTER_HOME \
-  && git config --global --add safe.directory $FLUTTER_HOME \
-  && flutter --version \
-  && flutter precache --linux --web --android \
-  # Accept Android licenses for Flutter
-  && flutter doctor --android-licenses || true \
-  && flutter doctor
 
 # =============================================================================
 # Supabase CLI (for local Supabase development/testing)
@@ -170,5 +156,4 @@ WORKDIR /home/runner/actions-runner
 ARG BUILD_DATE
 LABEL org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.title="actions-runner-flutter" \
-      org.opencontainers.image.description="Self-hosted GitHub Actions runner with Flutter, Android SDK, and CI tools" \
-      flutter.version="latest-stable"
+      org.opencontainers.image.description="Self-hosted GitHub Actions runner with Flutter, Android SDK, and CI tools"

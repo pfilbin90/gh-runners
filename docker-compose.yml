@@ -14,6 +14,7 @@ x-runner-vols: &runner-vols
   - pnpm-store:/home/runner/.local/share/pnpm
   - flutter-cache:/home/runner/.cache/flutter
   - claude-code:/opt/claude-code
+  - flutter-sdk:/opt/flutter
 
 x-runner-svc: &runner-svc
   # Use pre-built image from GitHub Container Registry
@@ -49,6 +50,9 @@ x-runner-svc: &runner-svc
     - 8.8.8.8
     - 8.8.4.4
     - 1.1.1.1
+  depends_on:
+    flutter-sdk:
+      condition: service_completed_successfully
 
 # KVM device for Linux hosts (enables hardware-accelerated Android emulator)
 x-kvm-device: &kvm-device
@@ -56,6 +60,15 @@ x-kvm-device: &kvm-device
     - /dev/kvm:/dev/kvm
 
 services:
+  flutter-sdk:
+    build:
+      context: .
+      dockerfile: Dockerfile.flutter-sdk
+    volumes:
+      - flutter-sdk:/opt/flutter
+    environment:
+      FLUTTER_VERSION: ${FLUTTER_VERSION:-}
+
   runner-1:
     <<: [*runner-svc, *kvm-device]
     environment:
@@ -78,6 +91,7 @@ services:
       RUNNER_NAME: ${RUNNER_NAME_PREFIX}-4
 
 volumes:
+  flutter-sdk:
   runner-cache:
   pub-cache:
   npm-cache:

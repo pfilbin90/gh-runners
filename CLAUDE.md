@@ -8,7 +8,9 @@ Self-hosted GitHub Actions runners for Flutter CI/CD, packaged as Docker contain
 
 ## Architecture
 
-- **Dockerfile.runner**: Custom runner image (x86_64) extending `ghcr.io/actions/actions-runner` with Flutter, Android SDK (including pre-created AVD), Node.js, Chrome, and build tools
+- **Dockerfile.runner**: Custom runner image (x86_64) extending `ghcr.io/actions/actions-runner` with Android SDK (including pre-created AVD), Node.js, Chrome, and build tools
+- **Dockerfile.flutter-sdk**: Minimal init container image that installs/updates Flutter SDK in a shared Docker volume
+- **init-flutter.sh**: Entrypoint script for the Flutter init container (clone, upgrade, precache)
 - **Dockerfile.runner.arm64**: ARM64 variant for Apple Silicon Macs (no Chrome/emulator, build-only)
 - **docker-compose.yml**: Runs 4 parallel ephemeral runners with shared caches for pub, npm, pnpm, and Flutter
 - **docker-compose.local.yml**: Override for local ARM64 Mac development (builds from Dockerfile.runner.arm64, removes KVM)
@@ -36,6 +38,11 @@ docker compose logs -f
 
 # Build image locally (instead of pulling from GHCR)
 .\build-and-push.ps1 <github-username>
+
+# Update Flutter SDK (no image rebuild needed)
+.\update-flutter.ps1
+# or pin to a specific version:
+.\update-flutter.ps1 -Version 3.41.9
 ```
 
 ### macOS ARM64 (Local Development)
@@ -88,12 +95,13 @@ Copy `.env.example` to `.env` and set:
 - `GH_PAT`: Personal Access Token (needs `repo`, `workflow` scopes)
 - `RUNNER_NAME_PREFIX`: Prefix for runner names (creates 4 runners: prefix-1 through prefix-4)
 - `RUNNER_LABELS`: Runner labels for workflow targeting
+- `FLUTTER_VERSION` (optional): Pin Flutter to a specific version (e.g., `3.41.9`). Omit for latest stable.
 
 ## Pre-installed Tools in Runner Image
 
 | Tool | Version | Notes |
 |------|---------|-------|
-| Flutter | Latest stable | Linux/Windows: baked at build time. macOS: synced from host via `flutter-sdk` volume. `$FLUTTER_HOME=/opt/flutter` |
+| Flutter | Latest stable | Linux/Windows: `flutter-sdk` init container volume. macOS: synced from host. `$FLUTTER_HOME=/opt/flutter` |
 | Android SDK | 33, 34 | Pre-created AVD named "test_avd" (Pixel 4, API 33) |
 | Java | 8, 21 | Both versions available; 21 is default |
 | Node.js | 22.x | With pnpm 9.x |
@@ -120,9 +128,14 @@ Key differences from standard deployment:
 
 ## Updating Flutter Version
 
-Flutter version is automatically fetched from Flutter's releases API at build time (latest stable).
+Flutter SDK lives in a shared Docker volume, managed by the `flutter-sdk` init container. Updating does not require an image rebuild.
 
-To pick up a new Flutter release:
-1. Rebuild the image: `.\build-and-push.ps1`
-2. Update desktop runners: `.\update-runners.ps1`
-3. Update Synology runners: `bash update-synology-runners.sh`
+```powershell
+# Update to latest stable (~2 minutes)
+.\update-flutter.ps1
+
+# Or pin to a specific version
+.\update-flutter.ps1 -Version 3.41.9
+```
+
+Runners pick up the new version on their next ephemeral cycle. No restart needed.
