@@ -1,5 +1,22 @@
 # Override for local ARM64 Mac - builds from Dockerfile instead of pulling image
 # Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#
+# Flutter is NOT baked into the local image. /opt/flutter is a Docker volume
+# (`flutter-sdk`) that mac-bootstrap-flutter.sh populates at container start
+# by syncing to the git ref of the host's Flutter install (bind-mounted
+# read-only at /host-flutter). After `flutter upgrade` on the host, restart
+# the runners to pick up the new version — no image rebuild required.
+#
+# Set HOST_FLUTTER_PATH in .env if Flutter is installed somewhere other than
+# the default Homebrew location (/opt/homebrew/share/flutter).
+
+x-mac-vols: &mac-vols
+  - ${HOST_FLUTTER_PATH:-/opt/homebrew/share/flutter}:/host-flutter:ro
+  - ./mac-bootstrap-flutter.sh:/home/runner/mac-bootstrap-flutter.sh:ro
+  - flutter-sdk:/opt/flutter
+
+x-mac-entrypoint: &mac-entrypoint
+  ["/bin/bash","-lc","/home/runner/mac-bootstrap-flutter.sh && /home/runner/register-and-run.sh"]
 
 services:
   runner-1:
@@ -8,18 +25,29 @@ services:
       dockerfile: Dockerfile.runner.arm64
     image: actions-runner-flutter:local-arm64
     devices: !reset []
+    volumes: *mac-vols
+    entrypoint: *mac-entrypoint
   runner-2:
     image: actions-runner-flutter:local-arm64
     devices: !reset []
+    volumes: *mac-vols
+    entrypoint: *mac-entrypoint
     depends_on:
       - runner-1
   runner-3:
     image: actions-runner-flutter:local-arm64
     devices: !reset []
+    volumes: *mac-vols
+    entrypoint: *mac-entrypoint
     depends_on:
       - runner-1
   runner-4:
     image: actions-runner-flutter:local-arm64
     devices: !reset []
+    volumes: *mac-vols
+    entrypoint: *mac-entrypoint
     depends_on:
       - runner-1
+
+volumes:
+  flutter-sdk:

@@ -40,6 +40,23 @@ docker compose logs -f
 
 ### macOS ARM64 (Local Development)
 
+On Mac, Flutter is **not** baked into the image. The `flutter-sdk` Docker volume
+is populated on container start by `mac-bootstrap-flutter.sh`, which syncs to
+the git ref of the host's Flutter install (bind-mounted read-only from
+`/opt/homebrew/share/flutter` by default). After `flutter upgrade` on the host,
+a `restart` brings the runners current — no image rebuild needed.
+
+If your Flutter is installed somewhere other than the Homebrew default, set
+`HOST_FLUTTER_PATH=/your/path/to/flutter` in `.env`.
+
+**One-time Docker Desktop setup:** Docker Desktop only shares a default set of
+host paths into containers (`/Users`, `/Volumes`, `/private`, `/tmp`,
+`/var/folders`). If your Flutter lives outside those — e.g., the Homebrew
+default at `/opt/homebrew/share/flutter` — add the parent directory in
+**Docker Desktop → Settings → Resources → File sharing** (add `/opt/homebrew`,
+or the parent of whatever you set `HOST_FLUTTER_PATH` to), then click "Apply &
+Restart". Without this, `up -d` will fail with "mounts denied".
+
 ```bash
 # Build and start runners (first time or after Dockerfile changes)
 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
@@ -56,6 +73,11 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml logs -f
 # Rebuild after Dockerfile.runner.arm64 changes
 docker compose -f docker-compose.yml -f docker-compose.local.yml build runner-1
 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+
+# Pick up a host Flutter upgrade (no image rebuild required)
+./upgrade-flutter-mac.sh
+# (equivalent to: flutter upgrade && docker compose ... restart, with a
+#  no-op short-circuit when the host Flutter is already current)
 ```
 
 ## Environment Configuration
@@ -71,7 +93,7 @@ Copy `.env.example` to `.env` and set:
 
 | Tool | Version | Notes |
 |------|---------|-------|
-| Flutter | Latest stable | Auto-fetched at build time; `$FLUTTER_HOME=/opt/flutter` |
+| Flutter | Latest stable | Linux/Windows: baked at build time. macOS: synced from host via `flutter-sdk` volume. `$FLUTTER_HOME=/opt/flutter` |
 | Android SDK | 33, 34 | Pre-created AVD named "test_avd" (Pixel 4, API 33) |
 | Java | 8, 21 | Both versions available; 21 is default |
 | Node.js | 22.x | With pnpm 9.x |
