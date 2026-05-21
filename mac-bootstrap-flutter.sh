@@ -49,8 +49,15 @@ if [ "$HOST_REF" = "$CUR_REF" ] && [ -x /opt/flutter/bin/flutter ]; then
       echo "[flutter-bootstrap] in sync at $HOST_REF but detached; restoring channel"
       restore_channel
     else
-      echo "[flutter-bootstrap] in sync at $HOST_REF on $CUR_BRANCH, skipping"
+      echo "[flutter-bootstrap] in sync at $HOST_REF on $CUR_BRANCH"
     fi
+    # Always refresh bin/cache/flutter.version.json before exiting. It can be
+    # stale from a prior detached-HEAD run (e.g. an older flutter-sdk init
+    # container, before it was disabled on Mac) with `channel: [user-branch]`
+    # / `repositoryUrl: unknown source` cached. That stale cache survives a
+    # `restore_channel` since the file isn't tied to git state, and it breaks
+    # `pub get` (the Flutter SDK constraint resolves to `0.0.0-unknown`).
+    flutter --version
     exit 0
   fi
 fi

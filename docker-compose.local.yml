@@ -19,6 +19,16 @@ x-mac-entrypoint: &mac-entrypoint
   ["/bin/bash","-lc","/home/runner/mac-bootstrap-flutter.sh && /home/runner/register-and-run.sh"]
 
 services:
+  # Disable the Linux init container on Mac. mac-bootstrap-flutter.sh (called
+  # from each runner's entrypoint) is the sole writer of the flutter-sdk volume
+  # — it syncs to the host's Flutter git ref. Without this override, the init
+  # container would fetch latest stable from GitHub and leave the volume in
+  # detached HEAD ("channel [user-branch] • unknown source") before bootstrap
+  # runs. The service stays defined so `depends_on: service_completed_successfully`
+  # on each runner still resolves — `true` exits 0 immediately.
+  flutter-sdk:
+    entrypoint: ["true"]
+
   runner-1:
     build:
       context: .
