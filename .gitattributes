@@ -1,2 +1,6 @@
 # Shell scripts must use LF so they run correctly when mounted into Linux containers
 *.sh text eol=lf
+
+# Bind-mounted into /etc/environment in Linux runner containers. A CRLF
+# checkout would inject \r into PATH and break every step shell.
+runner-environment text eol=lf

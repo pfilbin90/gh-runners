@@ -16,6 +16,15 @@ x-runner-vols: &runner-vols
   - claude-code:/opt/claude-code
   - cursor-agent:/opt/cursor-agent
   - flutter-sdk:/opt/flutter
+  # Host-managed PATH override so the actions runner step shells resolve
+  # cursor-agent / claude-code / flutter on PATH. The entrypoint runs as
+  # `bash -lc`, which sources /etc/profile.d/*.sh — so runner-paths.sh is
+  # what actually propagates PATH into Runner.Listener and its workers.
+  # runner-environment also bind-mounts /etc/environment for the small
+  # set of tools that consult it directly. Local-only workaround until the
+  # rebuild-image workflow ships an image that bakes both in.
+  - ./runner-environment:/etc/environment:ro
+  - ./runner-paths.sh:/etc/profile.d/runner-paths.sh:ro
 
 x-runner-svc: &runner-svc
   # Use pre-built image from GitHub Container Registry
