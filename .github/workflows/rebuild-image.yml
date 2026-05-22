@@ -1,9 +1,10 @@
 name: Rebuild Runner Image
 
 on:
-  schedule:
-    # Run at 00:00 UTC on the 1st of every month
-    # - cron: '0 0 1 * *'
+  # Manual-only trigger. Re-enable the monthly cron below if you want the
+  # image rebuilt on a schedule again.
+  # schedule:
+  #   - cron: '0 0 1 * *'
   workflow_dispatch:
     inputs:
       force_rebuild:
