@@ -15,6 +15,20 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     lcov \
   && rm -rf /var/lib/apt/lists/*
 
+# GitHub CLI — used by workflow steps that post sticky PR comments
+# (composer-security-review, ai-review-autofix, claude, gemini-*,
+# pr-deep-cleanup). Pre-built GitHub Hosted runners have `gh` baked in;
+# our self-hosted ones need it installed explicitly.
+RUN install -m 0755 -d /etc/apt/keyrings \
+  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+       | gpg --dearmor -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  && chmod a+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+       > /etc/apt/sources.list.d/github-cli.list \
+  && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y gh \
+  && rm -rf /var/lib/apt/lists/* \
+  && gh --version
+
 # Java environment variables (architecture-agnostic paths)
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-arm64
 ENV JAVA_HOME_8_X64=/usr/lib/jvm/java-8-openjdk-arm64
@@ -80,7 +94,24 @@ RUN mkdir -p $ANDROID_HOME/cmdline-tools \
 # See: docs/superpowers/specs/2026-05-01-mac-flutter-volume-mount-design.md
 # =============================================================================
 ENV FLUTTER_HOME=/opt/flutter
-ENV PATH=/opt/claude-code/bin:$FLUTTER_HOME/bin:$FLUTTER_HOME/bin/cache/dart-sdk/bin:$PATH
+ENV PATH=/opt/claude-code/bin:/opt/cursor-agent/bin:$FLUTTER_HOME/bin:$FLUTTER_HOME/bin/cache/dart-sdk/bin:$PATH
+
+# The GitHub Actions runner reads /etc/environment at startup to seed the
+# PATH it hands to workflow step shells. Without this override the runner
+# inherits the Ubuntu default PATH (no /opt/cursor-agent/bin etc.) and
+# workflow steps fail to resolve cursor-agent and claude-code even though
+# the Dockerfile ENV above includes them. Mirror the same paths into
+# /etc/environment so the runner picks them up.
+#
+# Also drop a /etc/profile.d entry so interactive `docker exec ... bash -l`
+# sessions see the same PATH for debugging.
+RUN printf 'PATH="%s"\n' \
+      "/opt/claude-code/bin:/opt/cursor-agent/bin:/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin" \
+      > /etc/environment \
+  && printf '%s\n' \
+      'export PATH="/opt/claude-code/bin:/opt/cursor-agent/bin:/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:$PATH"' \
+      > /etc/profile.d/runner-paths.sh \
+  && chmod 0644 /etc/profile.d/runner-paths.sh /etc/environment
 
 # =============================================================================
 # Supabase CLI (architecture-aware download)

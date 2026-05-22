@@ -14,6 +14,7 @@ x-runner-vols: &runner-vols
   - pnpm-store:/home/runner/.local/share/pnpm
   - flutter-cache:/home/runner/.cache/flutter
   - claude-code:/opt/claude-code
+  - cursor-agent:/opt/cursor-agent
   - flutter-sdk:/opt/flutter
 
 x-runner-svc: &runner-svc
@@ -98,6 +99,7 @@ volumes:
   pnpm-store:
   flutter-cache:
   claude-code:
+  cursor-agent:
 
 networks:
   default:

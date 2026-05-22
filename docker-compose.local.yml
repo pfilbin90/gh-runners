@@ -14,6 +14,11 @@ x-mac-vols: &mac-vols
   - ${HOST_FLUTTER_PATH:-/opt/homebrew/share/flutter}:/host-flutter:ro
   - ./mac-bootstrap-flutter.sh:/home/runner/mac-bootstrap-flutter.sh:ro
   - flutter-sdk:/opt/flutter
+  # cursor-agent CLI for the composer-security-review workflow. The volume
+  # is populated by update-cursor-agent.sh on the host (mirrors the Windows
+  # update-cursor-agent.ps1 pattern). Without this mount the runner
+  # workflow's "Verify cursor-agent is installed" guard step fails closed.
+  - cursor-agent:/opt/cursor-agent
 
 x-mac-entrypoint: &mac-entrypoint
   ["/bin/bash","-lc","/home/runner/mac-bootstrap-flutter.sh && /home/runner/register-and-run.sh"]
@@ -61,3 +66,6 @@ services:
 
 volumes:
   flutter-sdk:
+  # Inherited declaration from docker-compose.yml; restated here so this
+  # override file is self-documenting about every volume it mounts.
+  cursor-agent:
