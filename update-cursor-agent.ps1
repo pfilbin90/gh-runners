@@ -88,7 +88,7 @@ mkdir -p /opt/cursor-agent/bin
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-curl -fSL "$DOWNLOAD_URL" \
+curl -fsSL "$DOWNLOAD_URL" \
   | tar --strip-components=1 -xzf - -C "$TMPDIR"
 
 # Atomic swap: stage in tmp, then mv into place. Avoids leaving a half-extracted
@@ -114,7 +114,12 @@ echo "cursor-agent ${VERSION} installed."
 '@
 
 try {
-    $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bashScript))
+    # Normalize to LF: PowerShell here-strings end lines with CRLF, and bash
+    # parses `set -euo pipefail\r` as `set -euo pipefail<CR>`, which makes
+    # the `-o pipefail` option look like a separate invalid arg. Strip the
+    # CRs before base64-encoding.
+    $bashScriptLF = $bashScript -replace "`r`n", "`n"
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bashScriptLF))
     $output = docker exec $container bash -c "echo $encoded | base64 -d | bash" 2>&1
     Write-Log "Install output:`n$output"
 
