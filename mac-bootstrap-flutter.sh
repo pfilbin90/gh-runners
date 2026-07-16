@@ -40,6 +40,47 @@ restore_channel() {
   git -C /opt/flutter checkout "$HOST_CHANNEL"
 }
 
+# Flutter derives its version from `git describe --tags` against HEAD. A clone
+# with no reachable version tag reports frameworkVersion `0.0.0-unknown`, which
+# makes `pub get` reject every pubspec carrying a `flutter:` SDK constraint.
+# `git fetch <sha>` does NOT bring tags along, so a freshly recreated volume
+# lands tagless unless we fetch them explicitly. /host-flutter is a local bind
+# mount with the full tag set, so prefer it over a network round-trip.
+ensure_version_tags() {
+  if git -C /opt/flutter describe --match '*.*.*' --tags --abbrev=0 HEAD >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "[flutter-bootstrap] no version tag reachable from HEAD; fetching tags from /host-flutter"
+  git -C /opt/flutter fetch --no-write-fetch-head /host-flutter '+refs/tags/*:refs/tags/*' 2>/dev/null || true
+  if git -C /opt/flutter describe --match '*.*.*' --tags --abbrev=0 HEAD >/dev/null 2>&1; then
+    return 0
+  fi
+  # The tag exists but points outside the shallow boundary. Deepen from the
+  # host mount (local disk, no network) until describe can reach it.
+  echo "[flutter-bootstrap] tag still unreachable; deepening history from /host-flutter"
+  git -C /opt/flutter fetch --unshallow /host-flutter '+refs/tags/*:refs/tags/*' 2>/dev/null \
+    || git -C /opt/flutter fetch /host-flutter '+refs/tags/*:refs/tags/*' 2>/dev/null || true
+}
+
+# `flutter --version` serves bin/cache/flutter.version.json verbatim when it
+# exists; it does not re-derive the version from git. A single bad run (tagless
+# clone, detached HEAD, unconfigured safe.directory) therefore poisons the
+# shared volume permanently. Delete the cache so the next invocation rebuilds
+# it from the now-correct git state, then fail loudly if it is still unknown
+# rather than handing every CI job an SDK that pub will reject.
+refresh_version_cache() {
+  rm -f /opt/flutter/bin/cache/flutter.version.json
+  flutter --version
+  local resolved
+  resolved=$(flutter --version --machine 2>/dev/null | jq -r '.frameworkVersion // "0.0.0-unknown"')
+  if [ "$resolved" = "0.0.0-unknown" ]; then
+    echo "[flutter-bootstrap] ERROR: /opt/flutter resolves to 0.0.0-unknown after repair."
+    echo "[flutter-bootstrap] pub get will reject the Flutter SDK constraint on every job."
+    exit 1
+  fi
+  echo "[flutter-bootstrap] Flutter SDK resolves to $resolved"
+}
+
 if [ "$HOST_REF" = "$CUR_REF" ] && [ -x /opt/flutter/bin/flutter ]; then
   if [ "$CUR_BRANCH" = "$HOST_CHANNEL" ] || [ "$CUR_BRANCH" = "HEAD" ]; then
     # Volume's SHA matches host but HEAD is detached (CUR_BRANCH=HEAD).
@@ -51,13 +92,12 @@ if [ "$HOST_REF" = "$CUR_REF" ] && [ -x /opt/flutter/bin/flutter ]; then
     else
       echo "[flutter-bootstrap] in sync at $HOST_REF on $CUR_BRANCH"
     fi
-    # Always refresh bin/cache/flutter.version.json before exiting. It can be
-    # stale from a prior detached-HEAD run (e.g. an older flutter-sdk init
-    # container, before it was disabled on Mac) with `channel: [user-branch]`
-    # / `repositoryUrl: unknown source` cached. That stale cache survives a
-    # `restore_channel` since the file isn't tied to git state, and it breaks
-    # `pub get` (the Flutter SDK constraint resolves to `0.0.0-unknown`).
-    flutter --version
+    # Always repair tags and rebuild bin/cache/flutter.version.json before
+    # exiting. Both can be broken from a prior run (detached HEAD, or a
+    # tagless fetch after the volume was recreated) and neither is tied to
+    # git HEAD, so a matching SHA is not evidence the SDK is usable.
+    ensure_version_tags
+    refresh_version_cache
     exit 0
   fi
 fi
@@ -87,8 +127,9 @@ if ! git checkout --detach "$HOST_REF" 2>/dev/null; then
 fi
 
 restore_channel
+ensure_version_tags
+refresh_version_cache
 
-flutter --version
 flutter precache --linux --web --android
 flutter doctor --android-licenses >/dev/null 2>&1 || true
 flutter doctor || true
