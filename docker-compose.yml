@@ -8,7 +8,6 @@ x-runner-env: &runner-env
 x-runner-vols: &runner-vols
   - //var/run/docker.sock:/var/run/docker.sock
   - ./register-and-run.sh:/home/runner/register-and-run.sh:ro
-  - runner-cache:/_work
   - pub-cache:/home/runner/.pub-cache
   - npm-cache:/home/runner/.npm
   - pnpm-store:/home/runner/.local/share/pnpm
@@ -102,7 +101,6 @@ services:
 
 volumes:
   flutter-sdk:
-  runner-cache:
   pub-cache:
   npm-cache:
   pnpm-store:

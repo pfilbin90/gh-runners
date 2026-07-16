@@ -7,6 +7,7 @@ set -euo pipefail
 : "${RUNNER_LABELS:=self-hosted,Linux,X64}"
 : "${RUNNER_NAME:=runner-$(hostname)-$$}"
 : "${RUNNER_GROUP:=Default}"
+: "${RUNNER_GRADLE_CACHE_MAX_GB:=2}"
 
 # Determine if org-level or repo-level registration
 if [ -z "$GH_REPO" ]; then
@@ -53,6 +54,7 @@ fi
 echo "[runner] using RUNNER_DIR=$RUNNER_DIR"
 cd "$RUNNER_DIR"
 export RUNNER_ALLOW_RUNASROOT=1
+RUNNER_HOME="${RUNNER_HOME:-/home/runner}"
 
 # --- Main loop: re-register and run after each ephemeral job completes ---
 # Instead of exiting and relying on Docker’s restart policy (which causes
@@ -66,6 +68,53 @@ cleanup() {
   exit 0
 }
 trap cleanup SIGTERM SIGINT
+
+dir_kb() {
+  { du -sk "$1" 2>/dev/null || true; } | \
+    awk 'NR { print $1+0; found=1 } END { if (!found) print 0 }'
+}
+
+cleanup_after_job() {
+  local work_dir="$RUNNER_DIR/_work"
+  local before_kb after_kb gradle_kb gradle_limit_kb
+
+  before_kb=$(dir_kb "$work_dir")
+  before_kb=$((before_kb + $(dir_kb "$RUNNER_HOME/.gradle") + $(dir_kb "$RUNNER_HOME/.android/avd")))
+  echo "[runner] post-job cleanup starting; disposable=${before_kb}KB"
+
+  # The runner is ephemeral, but this container intentionally stays alive and
+  # re-registers. Remove the completed job's checkout/build tree before the
+  # next registration so it cannot accumulate in the writable container layer.
+  if [ -d "$work_dir" ]; then
+    find "$work_dir" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + 2>/dev/null || true
+  fi
+
+  # AVD user data is disposable CI state. Android system images remain in the
+  # runner image, so a later integration job can recreate the AVD as needed.
+  rm -rf "$RUNNER_HOME/.android/avd" "$RUNNER_HOME/.android/cache" 2>/dev/null || true
+
+  # Keep Gradle warm while it is small, but cap its persistent writable-layer
+  # cost. Wrapper distributions are retained to avoid needless redownloads.
+  gradle_kb=$(dir_kb "$RUNNER_HOME/.gradle")
+  gradle_limit_kb=$((RUNNER_GRADLE_CACHE_MAX_GB * 1024 * 1024))
+  if (( gradle_kb >= gradle_limit_kb )); then
+    echo "[runner] Gradle state is ${gradle_kb}KB; pruning at ${RUNNER_GRADLE_CACHE_MAX_GB}GB cap"
+    rm -rf "$RUNNER_HOME/.gradle/caches" "$RUNNER_HOME/.gradle/daemon" \
+      "$RUNNER_HOME/.gradle/native" "$RUNNER_HOME/.gradle/workers" 2>/dev/null || true
+  fi
+
+  # Remove abandoned job temp files without touching files from the current day.
+  find /tmp -mindepth 1 -maxdepth 1 -mtime +1 -exec rm -rf -- {} + 2>/dev/null || true
+
+  after_kb=$(dir_kb "$work_dir")
+  after_kb=$((after_kb + $(dir_kb "$RUNNER_HOME/.gradle") + $(dir_kb "$RUNNER_HOME/.android/avd")))
+  echo "[runner] post-job cleanup complete; disposable=${before_kb}KB -> ${after_kb}KB"
+}
+
+if [ "${RUNNER_CLEANUP_ONLY:-0}" = "1" ]; then
+  cleanup_after_job
+  exit 0
+fi
 
 while true; do
   ITERATION=$((ITERATION + 1))
@@ -114,6 +163,8 @@ while true; do
 
   echo "[runner] listening for jobs ..."
   ./run.sh || true
+
+  cleanup_after_job
 
   echo "[runner] run exited, re-registering in 5s ..."
   sleep 5
