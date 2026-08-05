@@ -186,6 +186,35 @@ Using `--no-cache` ensures the image rebuilds from scratch so the Dockerfile fet
 - No Chrome/ChromeDriver (x86_64 only)
 - Best suited for Flutter build/test tasks that don't require emulator or browser
 
+### Native macOS runner hosts
+
+For Xcode and signing jobs that must run directly on macOS, use
+`mac-runner-launchd-install.sh` rather than installing the stock persistent
+`runsvc.sh` service. The installer registers the runners at organization scope,
+places them in the requested runner group, and runs one job per registration:
+
+```bash
+GH_OWNER=SpinFreezeApp \
+GH_REPO=spinfreeze_app \
+RUNNER_HOME=/Users/pete \
+RUNNER_SCRIPTS_DIR=/Users/pete/repos/gh-runners \
+SHARED_RUNNER_DIR=/Users/pete/actions-runner-spinfreeze-1 \
+PRODUCTION_RUNNER_DIR=/Users/pete/actions-runner-spinfreeze-2 \
+bash mac-runner-launchd-install.sh
+```
+
+The loop uses a fresh registration token and `--ephemeral` for every job, then
+deletes the runner checkout and temp state. A launchd cleanup agent runs every
+six hours, but only when both managed runners are idle. It bounds diagnostic
+logs, stale CocoaPods/pub files, Gradle state, and oversized Xcode DerivedData.
+The cleanup thresholds are configurable with `GRADLE_MAX_GB`,
+`DERIVED_DATA_MAX_GB`, and `LOG_MAX_MB`.
+
+Runner groups provide GitHub routing and repository/workflow access control;
+they do not replace OS-level isolation. Do not place untrusted PR jobs and
+production signing credentials on the same macOS account or host if a true
+security boundary is required.
+
 ---
 
 ## Deployment: Synology NAS
@@ -505,4 +534,3 @@ When a runner goes offline, you'll receive a Slack message like:
 | `setup-monitor.ps1` | Set up scheduled monitoring task |
 | `.github/workflows/check-updates.yml` | Daily update checker with Slack notifications |
 | `SYNOLOGY.md` | Detailed Synology setup guide |
-
