@@ -26,21 +26,25 @@ CLEANUP_LABEL_NAME="spinfreeze.native-resource-cleanup"
 mkdir -p "$LAUNCH_AGENTS_DIR" "$LOG_ROOT/$SHARED_LABEL_NAME" "$LOG_ROOT/$PRODUCTION_LABEL_NAME" "$LOG_ROOT/$CLEANUP_LABEL_NAME"
 
 stop_agent() {
-  local label="$1" plist="$LAUNCH_AGENTS_DIR/${label}.plist"
+  local label="$1"
+  local plist="$LAUNCH_AGENTS_DIR/${label}.plist"
   launchctl bootout "gui/$(id -u)" "$plist" >/dev/null 2>&1 || true
 }
 
 stop_agent "$SHARED_LABEL_NAME"
 stop_agent "$PRODUCTION_LABEL_NAME"
 
-# Current runners were repository-scoped. Remove those registrations while the
-# old persistent listeners are stopped; the new loop registers at org scope.
-repo_remove_token="$(gh api --method POST "repos/${GH_OWNER}/${GH_REPO}/actions/runners/remove-token" --jq .token)"
-for runner_dir in "$SHARED_RUNNER_DIR" "$PRODUCTION_RUNNER_DIR"; do
-  if [[ -f "$runner_dir/.runner" ]]; then
-    (cd "$runner_dir" && ./config.sh remove --unattended --token "$repo_remove_token") || true
-  fi
-done
+# Current runners were repository-scoped. Remove only the two known old
+# registrations while the persistent listeners are stopped; the new loop
+# registers at org scope. This also works when the old runner was installed as
+# a launchd service, where `config.sh remove` cannot uninstall the service.
+while IFS= read -r runner_id; do
+  [[ -n "$runner_id" ]] || continue
+  gh api --method DELETE "repos/${GH_OWNER}/${GH_REPO}/actions/runners/${runner_id}" --silent || true
+done < <(
+  gh api "repos/${GH_OWNER}/${GH_REPO}/actions/runners" --paginate \
+    --jq '.runners[] | select(.name == "spinfreeze-mac-1" or .name == "spinfreeze-mac-2") | .id'
+)
 
 write_runner_plist() {
   local plist="$1" label="$2" name="$3" dir="$4" group="$5" extra_label="$6" log_dir="$7"
