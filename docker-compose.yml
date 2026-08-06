@@ -14,6 +14,7 @@ x-runner-vols: &runner-vols
   - flutter-cache:/home/runner/.cache/flutter
   - claude-code:/opt/claude-code
   - cursor-agent:/opt/cursor-agent
+  - codex-security:/opt/codex-security
   - flutter-sdk:/opt/flutter
   # Host-managed PATH override so the actions runner step shells resolve
   # cursor-agent / claude-code / flutter on PATH. The entrypoint runs as
@@ -107,6 +108,7 @@ volumes:
   flutter-cache:
   claude-code:
   cursor-agent:
+  codex-security:
 
 networks:
   default:
