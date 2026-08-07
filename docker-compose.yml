@@ -36,6 +36,20 @@ x-runner-svc: &runner-svc
   #   dockerfile: Dockerfile.runner
   environment: *runner-env
   volumes: *runner-vols
+  # Codex Security sandboxes its scan agent with Linux namespaces, and
+  # Docker's default seccomp profile blocks the syscalls that needs. Without
+  # this the agent silently loses its shell, reports "sandbox namespace cannot
+  # initialize", reasons through the whole scan anyway, then fails with "Scan
+  # agent did not create required draft artifacts". Verified: the same scan
+  # fails under the default profile and completes with it unconfined, this
+  # flag being the only difference.
+  #
+  # Prefer this over the alternative of disabling Codex's own sandbox
+  # (`--codex sandbox_mode="danger-full-access"`): that would leave the scan
+  # agent unconfined, whereas this keeps it sandboxed and only relaxes
+  # Docker's syscall filter one layer out.
+  security_opt:
+    - seccomp:unconfined
   entrypoint: ["/bin/bash","-lc","/home/runner/register-and-run.sh"]
   # The entrypoint script loops internally (re-registers after each ephemeral
   # job), so the container should rarely exit. "unless-stopped" is a safety net
