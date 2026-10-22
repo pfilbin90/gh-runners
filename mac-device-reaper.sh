@@ -93,11 +93,12 @@ shutdown_device() { # kind id name reason
   log "shut down $1 $3 ($2): $4"
 }
 
-# PID of the device's launchd_sim / qemu process: changes on every boot, so a
-# device restarted between scans does not inherit its previous idle clock.
+# Changes on every boot, so a device restarted between scans does not inherit
+# its previous idle clock: launchd_sim's PID for a simulator, the guest kernel
+# boot_id for an emulator (unique even across instances of one AVD).
 boot_id() { # kind id name
   if [[ "$1" == ios ]]; then pgrep -f "launchd_sim .*/Devices/$2/" | head -1
-  else pgrep -f "qemu-system.* -avd $3( |\$)" | head -1; fi
+  else adb -s "$2" shell cat /proc/sys/kernel/random/boot_id 2>/dev/null | tr -d '\r'; fi
 }
 
 reap() { # idle threshold in minutes
@@ -156,6 +157,9 @@ case "$MODE" in
     ;;
   session-start)
     sid=$(session_id); [[ -z "$sid" ]] && exit 0
+    # SessionStart also fires on resume/compact with the same id; keep the
+    # snapshot from the session's real start.
+    [[ -f "$STATE/sessions/$sid" ]] && exit 0
     # "<id> <boot id>" per device, so a reboot during the session counts as new.
     list_devices | while IFS='|' read -r kind id name; do
       echo "$id $(boot_id "$kind" "$id" "$name")"
