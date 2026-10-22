@@ -82,11 +82,13 @@ in_use() { # kind id name
 
 shutdown_device() { # kind id name reason
   if [[ $DRY -eq 1 ]]; then echo "WOULD SHUT DOWN $1 $3 ($2): $4"; return; fi
+  local ok=0
   if [[ "$1" == ios ]]; then
-    xcrun simctl shutdown "$2" >/dev/null 2>&1
+    xcrun simctl shutdown "$2" >/dev/null 2>&1 || ok=1
   else
-    adb -s "$2" emu kill >/dev/null 2>&1
+    adb -s "$2" emu kill >/dev/null 2>&1 || ok=1
   fi
+  if (( ok != 0 )); then log "FAILED to shut down $1 $3 ($2): $4"; return 1; fi
   rm -f "$STATE/last_used/$2"
   log "shut down $1 $3 ($2): $4"
 }
@@ -146,7 +148,9 @@ case "$MODE" in
   session-start)
     sid=$(session_id); [[ -z "$sid" ]] && exit 0
     list_devices | cut -d'|' -f2 >"$STATE/sessions/$sid"
-    find "$STATE/sessions" -type f -mtime +7 -delete 2>/dev/null
+    # Snapshots of crashed sessions linger; drop them after a day so they stop
+    # blocking other sessions' cleanup (the periodic reaper still covers them).
+    find "$STATE/sessions" -type f -mtime +1 -delete 2>/dev/null
     ;;
   session-end)
     sid=$(session_id); [[ -z "$sid" ]] && exit 0
@@ -155,12 +159,21 @@ case "$MODE" in
     # SessionEnd hooks get ~1.5s; do the slow part detached.
     (
       sleep 2 # let this session's own flutter/maestro children exit first
+      if paused || ci_job_running; then rm -f "$before"; exit 0; fi
       PROCS=$(ps -axww -o command= | grep -v -E \
         'CoreSimulator/Devices/|launchd_sim|simctl spawn [^ ]+ log stream|qemu-system|device-reaper' || true)
       while IFS='|' read -r kind id name; do
         grep -qx -- "$id" "$before" && continue
         if [[ "$kind" == android ]] && grep -qw -- "$name" <<<"$PROTECTED_AVDS"; then continue; fi
         in_use "$kind" "$id" "$name" && continue
+        # Booted after this session started, but another live session that
+        # also started before it could own it: leave it to the idle reaper.
+        others=0
+        for f in "$STATE/sessions"/*; do
+          [[ -e "$f" && "$f" != "$before" ]] || continue
+          grep -qx -- "$id" "$f" || { others=1; break; }
+        done
+        (( others )) && continue
         shutdown_device "$kind" "$id" "$name" "booted by ended Claude session $sid"
       done < <(list_devices)
       rm -f "$before"

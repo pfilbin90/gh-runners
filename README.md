@@ -219,13 +219,21 @@ Agents boot iOS simulators and Android emulators and leave them running.
 
 ```bash
 bash mac-device-reaper-install.sh   # links ~/.local/bin/device-reaper, loads launchd agents
-device-reaper status                # dry run
+~/.local/bin/device-reaper status   # dry run
 touch ~/.keep-sims                  # pause for 12 hours
 ```
 
-Log: `~/Library/Logs/device-reaper.log`. Claude Code also calls
-`device-reaper session-start|session-end` from `~/.claude/settings.json` hooks to
-shut down devices a session booted when it exits.
+Log: `~/Library/Logs/device-reaper.log`.
+
+Optional: to have Claude Code shut down devices a session booted when it exits,
+add these entries to the `hooks` arrays in `~/.claude/settings.json` (the
+installer does not touch that file). A device another live session could own is
+left to the idle reaper.
+
+```json
+"SessionStart": [{ "hooks": [{ "type": "command", "command": "~/.local/bin/device-reaper session-start", "timeout": 10 }] }],
+"SessionEnd":   [{ "hooks": [{ "type": "command", "command": "~/.local/bin/device-reaper session-end", "timeout": 5 }] }]
+```
 
 Runner groups provide GitHub routing and repository/workflow access control;
 they do not replace OS-level isolation. Do not place untrusted PR jobs and

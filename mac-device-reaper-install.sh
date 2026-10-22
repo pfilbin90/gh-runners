@@ -40,4 +40,4 @@ write_agent com.pete.device-reaper reap \
 write_agent com.pete.device-reaper.nightly nightly \
   '<key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>'
 
-echo "Installed device-reaper. Dry run: device-reaper status"
+echo "Installed device-reaper. Dry run: $BIN status"
