@@ -156,10 +156,14 @@ case "$MODE" in
     ;;
   session-start)
     sid=$(session_id); [[ -z "$sid" ]] && exit 0
-    list_devices | cut -d'|' -f2 >"$STATE/sessions/$sid"
-    # Snapshots of crashed sessions linger; drop them after a day so they stop
-    # blocking other sessions' cleanup (the periodic reaper still covers them).
-    find "$STATE/sessions" -type f -mtime +1 -delete 2>/dev/null
+    # "<id> <boot id>" per device, so a reboot during the session counts as new.
+    list_devices | while IFS='|' read -r kind id name; do
+      echo "$id $(boot_id "$kind" "$id" "$name")"
+    done >"$STATE/sessions/$sid"
+    # Crashed sessions leave snapshots behind. They only make session-end more
+    # cautious (the periodic reaper still covers those devices), so expire them
+    # slowly enough that long-lived sessions keep theirs.
+    find "$STATE/sessions" -type f -mtime +7 -delete 2>/dev/null
     ;;
   session-end)
     sid=$(session_id); [[ -z "$sid" ]] && exit 0
@@ -172,7 +176,8 @@ case "$MODE" in
       PROCS=$(ps -axww -o command= | grep -v -E \
         'CoreSimulator/Devices/|launchd_sim|simctl spawn [^ ]+ log stream|qemu-system|device-reaper' || true)
       while IFS='|' read -r kind id name; do
-        grep -qx -- "$id" "$before" && continue
+        key="$id $(boot_id "$kind" "$id" "$name")"
+        grep -qxF -- "$key" "$before" && continue
         if [[ "$kind" == android ]] && grep -qw -- "$name" <<<"$PROTECTED_AVDS"; then continue; fi
         in_use "$kind" "$id" "$name" && continue
         # Booted after this session started, but another live session that
@@ -180,7 +185,7 @@ case "$MODE" in
         others=0
         for f in "$STATE/sessions"/*; do
           [[ -e "$f" && "$f" != "$before" ]] || continue
-          grep -qx -- "$id" "$f" || { others=1; break; }
+          grep -qxF -- "$key" "$f" || { others=1; break; }
         done
         (( others )) && continue
         shutdown_device "$kind" "$id" "$name" "booted by ended Claude session $sid"
