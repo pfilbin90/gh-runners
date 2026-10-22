@@ -93,22 +93,30 @@ shutdown_device() { # kind id name reason
   log "shut down $1 $3 ($2): $4"
 }
 
+# PID of the device's launchd_sim / qemu process: changes on every boot, so a
+# device restarted between scans does not inherit its previous idle clock.
+boot_id() { # kind id name
+  if [[ "$1" == ios ]]; then pgrep -f "launchd_sim .*/Devices/$2/" | head -1
+  else pgrep -f "qemu-system.* -avd $3( |\$)" | head -1; fi
+}
+
 reap() { # idle threshold in minutes
-  local threshold=$1 kind id name last idle
+  local threshold=$1 kind id name last bid saved_bid idle
   while IFS='|' read -r kind id name; do
     [[ -z "$id" ]] && continue
     if [[ "$kind" == android ]] && grep -qw -- "$name" <<<"$PROTECTED_AVDS"; then continue; fi
+    bid=$(boot_id "$kind" "$id" "$name")
     if in_use "$kind" "$id" "$name"; then
       [[ $DRY -eq 1 ]] && echo "in use: $kind $name ($id)"
-      [[ $DRY -eq 0 ]] && echo "$NOW" >"$STATE/last_used/$id"
+      [[ $DRY -eq 0 ]] && echo "$NOW $bid" >"$STATE/last_used/$id"
       continue
     fi
-    if [[ ! -f "$STATE/last_used/$id" ]]; then
-      # First sighting: start its idle clock now rather than killing on sight.
-      [[ $DRY -eq 0 ]] && echo "$NOW" >"$STATE/last_used/$id"
+    last=""; saved_bid=""
+    [[ -f "$STATE/last_used/$id" ]] && read -r last saved_bid <"$STATE/last_used/$id"
+    if [[ -z "$last" || "$saved_bid" != "$bid" ]]; then
+      # First sighting of this boot: start its idle clock now.
+      [[ $DRY -eq 0 ]] && echo "$NOW $bid" >"$STATE/last_used/$id"
       last=$NOW
-    else
-      last=$(cat "$STATE/last_used/$id")
     fi
     idle=$(( (NOW - last) / 60 ))
     if (( idle >= threshold )); then
@@ -118,6 +126,7 @@ reap() { # idle threshold in minutes
     fi
   done < <(list_devices)
   # Forget devices that are no longer booted.
+  [[ $DRY -eq 1 ]] && return
   local f live
   live=$(list_devices | cut -d'|' -f2)
   for f in "$STATE/last_used"/*; do
