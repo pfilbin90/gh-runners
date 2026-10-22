@@ -210,6 +210,23 @@ logs, stale CocoaPods/pub files, Gradle state, and oversized Xcode DerivedData.
 The cleanup thresholds are configurable with `GRADLE_MAX_GB`,
 `DERIVED_DATA_MAX_GB`, and `LOG_MAX_MB`.
 
+### Device reaper (dev Mac)
+
+Agents boot iOS simulators and Android emulators and leave them running.
+`mac-device-reaper.sh` shuts down any that no process has used for 20 minutes
+(5 under memory pressure, and everything idle at 3am). Physical devices, the CI
+`test_avd`, and anything in use by a running Actions job are never touched.
+
+```bash
+bash mac-device-reaper-install.sh   # links ~/.local/bin/device-reaper, loads launchd agents
+device-reaper status                # dry run
+touch ~/.keep-sims                  # pause for 12 hours
+```
+
+Log: `~/Library/Logs/device-reaper.log`. Claude Code also calls
+`device-reaper session-start|session-end` from `~/.claude/settings.json` hooks to
+shut down devices a session booted when it exits.
+
 Runner groups provide GitHub routing and repository/workflow access control;
 they do not replace OS-level isolation. Do not place untrusted PR jobs and
 production signing credentials on the same macOS account or host if a true
