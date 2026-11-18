@@ -113,7 +113,10 @@ fi
 
 prune_gradle
 prune_derived_data
-remove_old_files "$RUNNER_HOME/Library/Caches/CocoaPods" 30
-remove_old_files "$RUNNER_HOME/.pub-cache" 30
+# Package files retain upstream mtimes, not cache download/access times. Pruning
+# individual files leaves entries that CocoaPods/pub still treat as installed
+# but cannot use (for example, an XCFramework with no Info.plist). Leave these
+# caches intact; any future eviction must remove complete package entries via
+# the package manager, including its metadata.
 rotate_logs
 echo "[mac-cleanup] completed while all managed runners were idle"
