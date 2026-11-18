@@ -1,0 +1,27 @@
+name: Mac cleanup tests
+
+on:
+  pull_request:
+    paths:
+      - mac-resource-cleanup.sh
+      - tests/mac-resource-cleanup-test.sh
+      - .github/workflows/mac-cleanup-tests.yml
+  push:
+    branches: [main]
+    paths:
+      - mac-resource-cleanup.sh
+      - tests/mac-resource-cleanup-test.sh
+      - .github/workflows/mac-cleanup-tests.yml
+
+permissions:
+  contents: read
+
+jobs:
+  package-cache-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check shell syntax
+        run: bash -n mac-resource-cleanup.sh tests/mac-resource-cleanup-test.sh
+      - name: Verify cleanup preserves package cache contents
+        run: bash tests/mac-resource-cleanup-test.sh

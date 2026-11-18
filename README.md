@@ -206,7 +206,10 @@ bash mac-runner-launchd-install.sh
 The loop uses a fresh registration token and `--ephemeral` for every job, then
 deletes the runner checkout and temp state. A launchd cleanup agent runs every
 six hours, but only when both managed runners are idle. It bounds diagnostic
-logs, stale CocoaPods/pub files, Gradle state, and oversized Xcode DerivedData.
+logs, Gradle state, and oversized Xcode DerivedData. CocoaPods and pub caches
+are left intact: package files retain upstream timestamps, so pruning files
+by age can corrupt even freshly downloaded packages. Cache eviction must use
+the package manager to remove complete entries and their metadata.
 The cleanup thresholds are configurable with `GRADLE_MAX_GB`,
 `DERIVED_DATA_MAX_GB`, and `LOG_MAX_MB`.
 
