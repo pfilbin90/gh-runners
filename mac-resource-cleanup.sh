@@ -16,6 +16,7 @@ LOCK_DIR="${RUNNER_HOME}/.spinfreeze-runner-cleanup.lock"
 GRADLE_MAX_GB="${GRADLE_MAX_GB:-5}"
 DERIVED_DATA_MAX_GB="${DERIVED_DATA_MAX_GB:-10}"
 LOG_MAX_MB="${LOG_MAX_MB:-25}"
+DART_ANALYSIS_CACHE_MAX_DAYS="${DART_ANALYSIS_CACHE_MAX_DAYS:-14}"
 
 PATH="${PATH:-/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin}"
 export PATH RUNNER_HOME
@@ -91,6 +92,18 @@ prune_derived_data() {
   fi
 }
 
+# The Dart analyzer writes one file per analyzed library version and only
+# evicts from a long-running server. Short `flutter analyze` runs across many
+# worktrees never evict, so the cache grew to 131 GB by 2026-11-23. The
+# analyzer wrote these files itself, so mtime is the write time, and a deleted
+# entry is recomputed on the next analyze.
+prune_dart_analysis_cache() {
+  local root="$RUNNER_HOME/.dartServer/.analysis-driver"
+  [[ -d "$root" ]] || return 0
+  find "$root" -type f -mtime "+${DART_ANALYSIS_CACHE_MAX_DAYS}" -delete 2>/dev/null || true
+  echo "[mac-cleanup] Dart analyzer cache: removed entries older than ${DART_ANALYSIS_CACHE_MAX_DAYS} days"
+}
+
 rotate_logs() {
   local log_dir="$RUNNER_HOME/Library/Logs" max_kb=$((LOG_MAX_MB * 1024))
   [[ -d "$log_dir" ]] || return 0
@@ -113,6 +126,7 @@ fi
 
 prune_gradle
 prune_derived_data
+prune_dart_analysis_cache
 # Package files retain upstream mtimes, not cache download/access times. Pruning
 # individual files leaves entries that CocoaPods/pub still treat as installed
 # but cannot use (for example, an XCFramework with no Info.plist). Leave these

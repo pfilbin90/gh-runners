@@ -35,6 +35,10 @@ for relative_path in "${package_files[@]}"; do
 done
 touch -t 200001010000 "$test_root/runner/_diag/old.log"
 touch "$test_root/runner/_diag/recent.log"
+analysis_cache="$test_root/home/.dartServer/.analysis-driver/00"
+mkdir -p "$analysis_cache"
+touch -t 200001010000 "$analysis_cache/old.resolved2"
+touch "$analysis_cache/recent.resolved2"
 
 PATH="$test_root/bin:$PATH" GH_BIN="$test_root/bin/gh" \
   GH_OWNER=test RUNNER_NAMES=test-mac RUNNER_HOME="$test_root/home" \
@@ -50,4 +54,6 @@ for relative_path in "${package_files[@]}"; do
 done
 [[ ! -e "$test_root/runner/_diag/old.log" ]]
 [[ -f "$test_root/runner/_diag/recent.log" ]]
-echo "Host cleanup preserves package caches and still prunes old runner logs."
+[[ ! -e "$analysis_cache/old.resolved2" ]]
+[[ -f "$analysis_cache/recent.resolved2" ]]
+echo "Host cleanup preserves package caches and still prunes old runner logs and Dart analyzer cache entries."
