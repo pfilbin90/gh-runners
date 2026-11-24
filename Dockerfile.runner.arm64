@@ -1,6 +1,6 @@
 # ARM64-compatible runner (for Apple Silicon Macs)
 # Simplified version without Chrome/Android emulator
-FROM ghcr.io/actions/actions-runner:latest
+FROM ghcr.io/actions/actions-runner:2.338.1
 
 USER root
 SHELL ["/bin/bash", "-lc"]
@@ -51,8 +51,12 @@ RUN groupadd -f docker && usermod -aG docker runner || true
 # =============================================================================
 # Node.js 22 + pnpm + firebase-tools
 # =============================================================================
+COPY patch-node-binary.sh /usr/local/bin/patch-node-binary
+RUN chmod 755 /usr/local/bin/patch-node-binary
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
   && apt-get update && apt-get install -y nodejs \
+  && /usr/local/bin/patch-node-binary 22.23.4 "$(command -v node)" \
+  && /usr/local/bin/patch-node-binary 24.22.1 /home/runner/externals/node24/bin/node \
   && npm i -g pnpm@9 firebase-tools \
   && rm -rf /var/lib/apt/lists/*
 

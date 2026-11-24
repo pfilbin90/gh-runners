@@ -113,6 +113,35 @@ docker compose logs -f
 docker compose ps
 ```
 
+### October 2026 Node security baseline
+
+Both Dockerfiles use Actions Runner 2.338.1 and require Node 22.23.4 for shell
+commands and Node 24.22.1 for JavaScript actions. `actions/setup-node` only
+changes the former. Rebuild and roll out the image to retain these fixes after
+container replacement; changing a running container alone is temporary.
+
+For an existing idle runner, `patch-node-binary.sh VERSION /absolute/path/to/node`
+can apply the same baseline. It verifies the official archive SHA-256, rejects
+major-version changes, preserves newer patch versions, and atomically replaces
+only the executable. npm, caches, credentials, and runner registration remain
+untouched. Use `readlink -f` on Linux to resolve a symlink before passing a target.
+Run between jobs: a process that was already running retains its old executable
+until it exits. Do not interrupt an active job to patch it.
+
+Examples (confirm paths on the target first):
+
+```bash
+bash patch-node-binary.sh 22.23.4 /usr/bin/node
+bash patch-node-binary.sh 24.22.1 /home/runner/externals/node24/bin/node
+```
+
+Native Mac runners use the same script for their `externals/node24/bin/node`.
+Update the interactive Node installation separately through its version manager.
+GitHub's retained `externals/node20` is end-of-life; do not opt into
+`ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION`. Current runner releases execute
+JavaScript actions with Node 24 by default. Recheck bundled runtime versions
+after runner upgrades.
+
 ### Updating to a New Image
 
 When you want to rebuild with the latest Flutter/tools:
